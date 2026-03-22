@@ -1,9 +1,15 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import {
+  type AuthLoginResult,
+  type AuthSession,
   type AuthLoginPayload,
+  type AuthRefreshResult,
+  type AuthUser,
   type FileReadPayload,
   type FileWritePayload,
+  type PasswordResetPayload,
+  type PasswordResetResult,
   IPC_CHANNELS,
   IPC_CHANNELS_LEGACY,
   type AppInfo,
@@ -11,6 +17,8 @@ import {
 } from "@/shared/electronApi";
 import { registerLicenseHandlers, unregisterLicenseHandlers } from "./licenseHandlers";
 import { withErrorHandling } from "./utils";
+import { authService } from "../services/auth";
+import { secureSessionStore } from "../services/secureSessionStore";
 
 /**
  * Helper to safely get sender window with proper error handling
@@ -33,25 +41,71 @@ export function registerIpcHandlers(isVerbose: boolean): void {
   /**
    * AUTH: Login handler
    */
-  withErrorHandling<AuthLoginPayload, { accessToken: string; expiresIn: number }>(
+  withErrorHandling<AuthLoginPayload, AuthLoginResult>(
     IPC_CHANNELS_LEGACY.AUTH_LOGIN,
     async (_event, payload) => {
       if (isVerbose) {
-        console.info("[ipc] auth:login", payload.username);
+        console.info("[ipc] auth:login", payload.email);
       }
-      return {
-        accessToken: `stub-token-${payload.username}`,
-        expiresIn: 3600
-      };
+      return authService.login(payload);
+    }
+  );
+
+  withErrorHandling<{ refreshToken: string }, AuthRefreshResult>(
+    IPC_CHANNELS_LEGACY.AUTH_REFRESH,
+    async (_event, payload) => {
+      if (!payload.refreshToken) {
+        throw new Error("Thiếu refresh token");
+      }
+      return authService.refresh(payload.refreshToken);
+    }
+  );
+
+  withErrorHandling<void, AuthUser | null>(
+    IPC_CHANNELS_LEGACY.AUTH_ME,
+    async () => {
+      const session = await secureSessionStore.loadSession();
+      if (!session?.accessToken) {
+        return null;
+      }
+      return authService.me(session.accessToken);
+    }
+  );
+
+  withErrorHandling<PasswordResetPayload, PasswordResetResult>(
+    IPC_CHANNELS_LEGACY.AUTH_REQUEST_PASSWORD_RESET,
+    async (_event, payload) => {
+      return authService.requestPasswordReset(payload.email);
     }
   );
 
   /**
    * AUTH: Logout handler
    */
-  withErrorHandling<void, void>(
+  withErrorHandling<{ refreshToken?: string } | undefined, void>(
     IPC_CHANNELS_LEGACY.AUTH_LOGOUT,
-    async () => undefined
+    async (_event, payload) => {
+      await authService.logout(payload?.refreshToken);
+    }
+  );
+
+  withErrorHandling<void, AuthSession | null>(
+    IPC_CHANNELS_LEGACY.AUTH_LOAD_SESSION,
+    async () => secureSessionStore.loadSession()
+  );
+
+  withErrorHandling<AuthSession, void>(
+    IPC_CHANNELS_LEGACY.AUTH_SAVE_SESSION,
+    async (_event, payload) => {
+      await secureSessionStore.saveSession(payload);
+    }
+  );
+
+  withErrorHandling<void, void>(
+    IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION,
+    async () => {
+      await secureSessionStore.clearSession();
+    }
   );
 
   /**

@@ -96,7 +96,13 @@ export function withErrorHandling<Payload = unknown, Response = unknown>(
 export const IPC_HANDLERS = {
   // Auth
   "auth:login": "auth:login",
+  "auth:refresh": "auth:refresh",
+  "auth:me": "auth:me",
+  "auth:request-password-reset": "auth:request-password-reset",
   "auth:logout": "auth:logout",
+  "auth:load-session": "auth:load-session",
+  "auth:save-session": "auth:save-session",
+  "auth:clear-session": "auth:clear-session",
 
   // File System
   "filesystem:read-text-file": "filesystem:read-text-file",

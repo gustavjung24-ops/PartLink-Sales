@@ -9,3 +9,4 @@ export * from "./routes/auth";
 export * from "./routes/parts";
 export * from "./routes/sync";
 export * from "./routes/license";
+export * from "./modules/knowledge/routes";

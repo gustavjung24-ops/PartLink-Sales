@@ -33,7 +33,13 @@ async function invokeIpc<T>(channel: string, payload?: unknown): Promise<T> {
 const electronAPI: ElectronAPI = {
   auth: {
     login: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGIN, payload),
-    logout: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGOUT)
+    refresh: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_REFRESH, payload),
+    me: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_ME),
+    requestPasswordReset: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_REQUEST_PASSWORD_RESET, payload),
+    logout: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGOUT, payload),
+    loadSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOAD_SESSION),
+    saveSession: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_SAVE_SESSION, payload),
+    clearSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION)
   },
   fileSystem: {
     readTextFile: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE, payload),

@@ -22,13 +22,45 @@ import type {
 } from "@sparelink/shared";
 
 export interface AuthLoginPayload {
-  username: string;
+  email: string;
   password: string;
+  rememberMe?: boolean;
 }
 
-export interface AuthLoginResult {
+export type UserRole = "USER" | "SALES" | "SENIOR_SALES" | "ADMIN" | "SUPER_ADMIN";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  roles: UserRole[];
+}
+
+export interface AuthSession {
+  accessToken: string;
+  refreshToken: string;
+  user: AuthUser;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export interface AuthLoginResult extends AuthSession {
+  expiresIn: number;
+}
+
+export interface AuthRefreshResult {
   accessToken: string;
   expiresIn: number;
+  expiresAt: number;
+}
+
+export interface PasswordResetPayload {
+  email: string;
+}
+
+export interface PasswordResetResult {
+  sent: boolean;
+  message: string;
 }
 
 export interface FileReadPayload {
@@ -57,7 +89,13 @@ export interface WindowState {
 export interface ElectronAPI {
   auth: {
     login: (payload: AuthLoginPayload) => Promise<AuthLoginResult>;
-    logout: () => Promise<void>;
+    refresh: (payload: { refreshToken: string }) => Promise<AuthRefreshResult>;
+    me: () => Promise<AuthUser | null>;
+    requestPasswordReset: (payload: PasswordResetPayload) => Promise<PasswordResetResult>;
+    logout: (payload?: { refreshToken?: string }) => Promise<void>;
+    loadSession: () => Promise<AuthSession | null>;
+    saveSession: (payload: AuthSession) => Promise<void>;
+    clearSession: () => Promise<void>;
   };
   fileSystem: {
     readTextFile: (payload: FileReadPayload) => Promise<string>;
@@ -92,7 +130,13 @@ export interface ElectronAPI {
 export const IPC_CHANNELS = {
   auth: {
     LOGIN: "auth:login",
+    REFRESH: "auth:refresh",
+    ME: "auth:me",
+    REQUEST_PASSWORD_RESET: "auth:request-password-reset",
     LOGOUT: "auth:logout",
+    LOAD_SESSION: "auth:load-session",
+    SAVE_SESSION: "auth:save-session",
+    CLEAR_SESSION: "auth:clear-session",
   },
   filesystem: {
     READ_TEXT_FILE: "filesystem:read-text-file",
@@ -125,7 +169,13 @@ export const IPC_CHANNELS = {
 // Flattened for backwards compatibility
 export const IPC_CHANNELS_LEGACY = {
   AUTH_LOGIN: "auth:login",
+  AUTH_REFRESH: "auth:refresh",
+  AUTH_ME: "auth:me",
+  AUTH_REQUEST_PASSWORD_RESET: "auth:request-password-reset",
   AUTH_LOGOUT: "auth:logout",
+  AUTH_LOAD_SESSION: "auth:load-session",
+  AUTH_SAVE_SESSION: "auth:save-session",
+  AUTH_CLEAR_SESSION: "auth:clear-session",
   FILESYSTEM_READ_TEXT_FILE: "filesystem:read-text-file",
   FILESYSTEM_WRITE_TEXT_FILE: "filesystem:write-text-file",
   APP_GET_INFO: "app:get-info",
