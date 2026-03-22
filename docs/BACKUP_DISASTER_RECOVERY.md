@@ -15,19 +15,20 @@ SPARELINK implements a comprehensive backup and recovery strategy for PostgreSQL
 ### 1.1 Full Backup
 - **Frequency**: Daily at 2:00 AM UTC
 - **Retention**: 30 days
-- **Method**: `pg_dump` with custom format (ideal for point-in-time recovery)
+- **Method**: `pg_basebackup` physical base backup (required for point-in-time recovery)
 - **Location**: S3 bucket with encryption
 
 ```bash
-# Full backup script
-pg_dump -U ${DB_USER} -h ${DB_HOST} \
-  --format=custom \
-  --compress=9 \
-  --jobs=4 \
-  ${DB_NAME} > backup_$(date +%Y%m%d_%H%M%S).dump
+# Daily physical base backup
+pg_basebackup -U ${DB_USER} -h ${DB_HOST} \
+  --pgdata=- \
+  --format=tar \
+  --gzip \
+  --wal-method=none \
+  > base_$(date +%Y%m%d_%H%M%S).tar.gz
 
 # Upload to S3
-aws s3 cp backup_*.dump s3://sparelink-backups/full/
+aws s3 cp base_*.tar.gz s3://sparelink-backups/base/
 ```
 
 ### 1.2 Incremental Backups (WAL Archive)
@@ -49,7 +50,7 @@ archive_timeout = 300
 
 ### 1.3 Point-in-Time Recovery (PITR)
 - Enables recovery to any second within WAL retention period
-- Combine full backup + subsequent WAL files
+- Combine a physical base backup + subsequent WAL files
 
 ---
 
@@ -81,11 +82,9 @@ def verify_backup(backup_path):
 
 ### 3.1 Full Database Recovery
 1. Stop application servers
-2. **Restore from latest full backup:**
+2. **Restore from latest physical base backup:**
    ```bash
-   pg_restore -U ${DB_USER} -h ${DB_HOST} \
-     --jobs=4 \
-     backup_latest.dump
+  tar -xzf base_latest.tar.gz -C ${PGDATA}
    ```
 3. **Apply WAL files to recover to point-in-time:**
    ```bash

@@ -7,6 +7,7 @@ import { licenseStateManager } from "./services/license";
 import { licenseApiService } from "./services/licenseApi";
 import { secureLicenseStore } from "./services/secureLicenseStore";
 import { deviceFingerprintService } from "./services/fingerprint";
+import { sqliteCacheRecoveryService } from "./services/sqliteCacheRecovery";
 import { appUpdater } from "./services/updater";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,6 +84,16 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    const sqliteHealth = await sqliteCacheRecoveryService.ensureHealthyCache(async () => {
+      console.warn(
+        "[SQLite Cache] Local cache was quarantined. A fresh cache must be rebuilt from the server on next sync."
+      );
+    });
+
+    if (sqliteHealth.status !== "healthy" && sqliteHealth.status !== "missing") {
+      console.warn("[SQLite Cache] Startup maintenance result:", sqliteHealth);
+    }
+
     const storedLicense = await secureLicenseStore.loadLicenseData();
     await licenseStateManager.initialize(storedLicense);
     licenseApiService.restoreNonce(storedLicense?.nonce ?? null);
