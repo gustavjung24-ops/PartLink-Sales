@@ -6,6 +6,7 @@ import { AuthProvider } from "./AuthProvider";
 import { queryClient } from "../lib/queryClient";
 import { SyncManager } from "../services/SyncManager";
 import { useOfflineStore } from "../stores/offlineStore";
+import { UpdateNotifier } from "../components/UpdateNotifier";
 
 const syncManager = new SyncManager();
 
@@ -29,7 +30,10 @@ export function AppProviders({ children }: AppProvidersProps): JSX.Element {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+          <UpdateNotifier />
+        </QueryClientProvider>
       </AuthProvider>
     </ThemeProvider>
   );

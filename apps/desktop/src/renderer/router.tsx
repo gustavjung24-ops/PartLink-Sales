@@ -4,6 +4,14 @@ import { LicenseGuard } from "./components/LicenseGuard";
 import { RoleGuard } from "./components/RoleGuard";
 import { MainLayout } from "./layouts/MainLayout";
 import { DashboardScreen } from "./screens/Dashboard/DashboardScreen";
+import { SearchScreen } from "./screens/Search/SearchScreen";
+import { PartDetailScreen } from "./screens/Parts/PartDetailScreen";
+import { QuotesListScreen } from "./screens/Quotes/QuotesListScreen";
+import { QuoteEditorScreen } from "./screens/Quotes/QuoteEditorScreen";
+import { SearchHistoryScreen } from "./screens/History/SearchHistoryScreen";
+import { TrainingScreen } from "./screens/Training/TrainingScreen";
+import { AdminSettingsScreen } from "./screens/Admin/AdminSettingsScreen";
+import { SyncStatusScreen } from "./screens/Sync/SyncStatusScreen";
 import { LicenseActivationPage } from "./pages/License/LicenseActivationPage";
 import { LoginScreen } from "./screens/Login/LoginScreen";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -48,27 +56,59 @@ export const router = createHashRouter([
       },
       {
         path: "lookup",
-        element: <PlaceholderPage title="Tra mã & Quy đổi" />,
+        element: (
+          <LicenseGuard>
+            <SearchScreen />
+          </LicenseGuard>
+        ),
+      },
+      {
+        path: "parts/:id",
+        element: (
+          <LicenseGuard>
+            <PartDetailScreen />
+          </LicenseGuard>
+        ),
       },
       {
         path: "quotes",
         element: (
           <RoleGuard allow={["SALES", "SENIOR_SALES", "ADMIN", "SUPER_ADMIN"]}>
-            <PlaceholderPage title="Báo giá" />
+            <QuotesListScreen />
           </RoleGuard>
         ),
       },
       {
         path: "quotes/new",
-        element: <PlaceholderPage title="Tạo báo giá mới" />,
+        element: (
+          <RoleGuard allow={["SALES", "SENIOR_SALES", "ADMIN", "SUPER_ADMIN"]}>
+            <QuoteEditorScreen />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: "quotes/:id",
+        element: (
+          <RoleGuard allow={["SALES", "SENIOR_SALES", "ADMIN", "SUPER_ADMIN"]}>
+            <QuoteEditorScreen />
+          </RoleGuard>
+        ),
       },
       {
         path: "history",
-        element: <PlaceholderPage title="Lịch sử" />,
+        element: (
+          <LicenseGuard>
+            <SearchHistoryScreen />
+          </LicenseGuard>
+        ),
       },
       {
         path: "training",
-        element: <PlaceholderPage title="Đào tạo" />,
+        element: (
+          <LicenseGuard>
+            <TrainingScreen />
+          </LicenseGuard>
+        ),
       },
       {
         path: "approvals",
@@ -98,7 +138,7 @@ export const router = createHashRouter([
         path: "admin",
         element: (
           <RoleGuard allow={["ADMIN", "SUPER_ADMIN"]}>
-            <PlaceholderPage title="Quản trị" />
+            <AdminSettingsScreen />
           </RoleGuard>
         ),
       },
@@ -112,7 +152,11 @@ export const router = createHashRouter([
       },
       {
         path: "sync",
-        element: <PlaceholderPage title="Đồng bộ" />,
+        element: (
+          <LicenseGuard>
+            <SyncStatusScreen />
+          </LicenseGuard>
+        ),
       },
       {
         path: "settings",
