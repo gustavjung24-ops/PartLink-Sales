@@ -11,6 +11,7 @@
 
 import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
+import { config } from "../config";
 import {
   ApiErrorCode,
   AuthLoginPayload,
@@ -31,8 +32,8 @@ interface UserRecord {
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET ?? "sparelink-dev-access-secret";
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? "sparelink-dev-refresh-secret";
+const ACCESS_SECRET = config.jwtSecret;
+const REFRESH_SECRET = config.jwtRefreshSecret;
 
 const users: UserRecord[] = [
   {
@@ -85,7 +86,7 @@ function createAccessToken(user: UserRecord): string {
       userId: user.id,
       username: user.username,
       email: user.email,
-      role: user.role,
+      roles: [user.role],
       permissions: user.permissions,
     },
     ACCESS_SECRET,
@@ -99,7 +100,7 @@ function createRefreshToken(user: UserRecord): string {
       userId: user.id,
       username: user.username,
       email: user.email,
-      role: user.role,
+      roles: [user.role],
       permissions: user.permissions,
       type: "refresh",
     },
@@ -118,7 +119,7 @@ function decodeToken(token: string, secret: string): AuthTokenPayload {
     userId: String(decoded.userId ?? ""),
     username: String(decoded.username ?? ""),
     email: String(decoded.email ?? ""),
-    role: (decoded.role as AuthTokenPayload["role"]) ?? "USER",
+    roles: Array.isArray(decoded.roles) ? decoded.roles.map((role) => String(role) as UserRole) : ["USER"],
     permissions: Array.isArray(decoded.permissions) ? decoded.permissions.map(String) : [],
     iat: Number(decoded.iat ?? 0),
     exp: Number(decoded.exp ?? 0),
@@ -222,7 +223,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
           id: payload.userId,
           username: payload.username,
           email: payload.email,
-          role: payload.role,
+          role: payload.roles[0] ?? "USER",
           permissions: payload.permissions,
         })
       );

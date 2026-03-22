@@ -220,8 +220,23 @@ export class DataImportService {
     let rejected = 0;
 
     for (const row of rows) {
-      if (row.status === "CONFLICT" || row.status === "NEW" || row.status === "REJECTED") {
-        // Skip unresolved conflicts and rejected rows
+      if (row.status === "CONFLICT") {
+        await approvalWorkflowService.submitApprovalRequest({
+          entityType: "IMPORT_BATCH",
+          entityId: `${batchId}:${row.id}`,
+          data: {
+            conflictType: row.conflictType,
+            conflictData: row.conflictData as Prisma.JsonValue,
+            rawData: row.rawData as Prisma.JsonValue,
+          },
+          requestedById: approvedBy,
+          reason: "Import conflict requires approval",
+        });
+        continue;
+      }
+
+      if (row.status === "NEW" || row.status === "REJECTED") {
+        // Skip rows that are not ready for application
         continue;
       }
 

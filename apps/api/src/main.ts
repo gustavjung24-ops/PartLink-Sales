@@ -25,6 +25,9 @@ import fastifyJwt from "@fastify/jwt";
 import pino from "pino";
 import { config } from "./config";
 import { connectDatabase, disconnectDatabase, runMigrations, seedDatabase } from "./database/client";
+import { registerAuthRoutes } from "./routes/auth";
+import { registerKnowledgeRoutes } from "./modules/knowledge/routes";
+import { registerApprovalRoutes } from "./modules/approvals/routes";
 
 const logger = pino({
   level: config.logLevel,
@@ -78,12 +81,9 @@ async function startServer() {
       environment: config.nodeEnv,
     }));
 
-    // TODO: Register route modules:
-    // await app.register(registerAuthRoutes, { prefix: "/api/auth" });
-    // await app.register(registerProductRoutes, { prefix: "/api/products" });
-    // await app.register(registerQuoteRoutes, { prefix: "/api/quotes" });
-    // await app.register(registerLicenseRoutes, { prefix: "/api/licenses" });
-    // await app.register(registerApprovalRoutes, { prefix: "/api/approvals" });
+    await app.register(registerAuthRoutes);
+    await app.register(registerKnowledgeRoutes);
+    await app.register(registerApprovalRoutes);
 
     // Global error handler
     app.setErrorHandler((error, request, reply) => {

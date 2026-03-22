@@ -34,7 +34,10 @@ export const config = {
   // JWT
   jwtSecret: getEnvVar("JWT_SECRET"),
   jwtExpiry: process.env.JWT_EXPIRY || "24h",
-  jwtRefreshSecret: getEnvVar("JWT_REFRESH_SECRET", getEnvVar("JWT_SECRET")),
+  jwtRefreshSecret:
+    process.env.NODE_ENV === "production"
+      ? getEnvVar("JWT_REFRESH_SECRET")
+      : getEnvVar("JWT_REFRESH_SECRET", "dev-refresh-secret-different"),
   jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || "7d",
 
   // Encryption

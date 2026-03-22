@@ -283,9 +283,9 @@ export class LicenseService {
       }
 
       // Calculate days remaining
-      const daysRemaining = Math.ceil(
-        (license.expiryDate!.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const daysRemaining = license.expiryDate
+        ? Math.ceil((license.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+        : undefined;
 
       // Update last validated timestamp
       await prisma.activation.update({

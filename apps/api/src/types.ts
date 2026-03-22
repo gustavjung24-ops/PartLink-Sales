@@ -99,7 +99,7 @@ export interface AuthTokenPayload {
   userId: string;
   username: string;
   email: string;
-  role: UserRole;
+  roles: UserRole[];
   permissions: string[];
   iat: number;
   exp: number;

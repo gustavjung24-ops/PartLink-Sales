@@ -16,7 +16,7 @@ datasource db {
 
 /// User account in SPARELINK system
 model User {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   email         String    @unique @db.VarChar(255)
   name          String    @db.VarChar(255)
   passwordHash  String    @db.VarChar(255)
@@ -39,7 +39,7 @@ model User {
 
 /// Role definition (e.g., USER, SALES, SENIOR_SALES, ADMIN, SUPER_ADMIN)
 model Role {
-  id            String    @id @default(cuid())
+  id            Int       @id @default(autoincrement())
   name          String    @unique @db.VarChar(100)
   description   String?   @db.Text
   level         Int       @default(0) // For hierarchical checks
@@ -56,7 +56,7 @@ model Role {
 
 /// Permission definition
 model Permission {
-  id            String    @id @default(cuid())
+  id            Int       @id @default(autoincrement())
   resource      String    @db.VarChar(100) // e.g., "quotes", "products"
   action        String    @db.VarChar(100) // e.g., "create", "read", "approve"
   description   String?   @db.Text
@@ -73,9 +73,9 @@ model Permission {
 
 /// Junction table: Role -> Permission (many-to-many)
 model RolePermission {
-  id            String    @id @default(cuid())
-  roleId        String
-  permissionId  String
+  id            Int       @id @default(autoincrement())
+  roleId        Int
+  permissionId  Int
   
   role          Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
@@ -86,9 +86,9 @@ model RolePermission {
 
 /// Junction table: User -> Role (many-to-many)
 model UserRole {
-  id            String    @id @default(cuid())
-  userId        String
-  roleId        String
+  id            Int       @id @default(autoincrement())
+  userId        String    @db.Uuid
+  roleId        Int
   
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role          Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -103,7 +103,7 @@ model UserRole {
 
 /// License key and activation tracking
 model License {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   licenseKey    String    @unique @db.VarChar(255)
   // Encrypted: customer_id|activation_count|expiry_date|signature
   encryptedMetadata String @db.Text
@@ -135,8 +135,8 @@ model License {
 
 /// Track each device/machine activation
 model Activation {
-  id            String    @id @default(cuid())
-  licenseId     String
+  id            String    @id @default(uuid()) @db.Uuid
+  licenseId     String    @db.Uuid
   machineId     String    @db.VarChar(255) // Fingerprint: CPU+Disk+Board serial
   
   fingerprint   String    @db.Text // JSON: {hwId, manufacturer, osType, appVersion}
@@ -164,7 +164,7 @@ model Activation {
 
 /// Customer/Company information
 model Customer {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   name          String    @db.VarChar(255)
   email         String?   @db.VarChar(255)
   phone         String?   @db.VarChar(50)
@@ -192,7 +192,7 @@ model Customer {
 
 /// Product information
 model Product {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   // Product identity
   name          String    @db.VarChar(255)
@@ -227,8 +227,8 @@ model Product {
 
 /// Normalized product codes (BRG-1234, HYD-5678, etc.)
 model ProductCode {
-  id            String    @id @default(cuid())
-  productId     String
+  id            String    @id @default(uuid()) @db.Uuid
+  productId     String    @db.Uuid
   
   // Code variants
   code          String    @unique @db.VarChar(50)
@@ -253,11 +253,11 @@ model ProductCode {
 
 /// Product mapping: alternate codes, cross-references, AI suggestions
 model ProductMapping {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   // Primary product and alternate references
-  primaryProductId String
-  alternateProductId String?
+  primaryProductId String @db.Uuid
+  alternateProductId String? @db.Uuid
   
   // Mapping metadata
   mappingType   String    // "INTERNAL_REPLACEMENT", "SUPPLIER_EQUIVALENT", "AI_SUGGESTED"
@@ -269,7 +269,7 @@ model ProductMapping {
   aiPrompt      String?   @db.Text
   
   // Revision tracking
-  revision      Int       @default(1) @db.SmallInt
+  revision      Int       @default(autoincrement()) @db.SmallInt
   status        String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUPERSEDED
   rejectionReason String? @db.Text
   
@@ -292,12 +292,12 @@ model ProductMapping {
 
 /// Quote: Sales proposal
 model Quote {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   // Quote identity
   quoteNumber   String    @unique @db.VarChar(50)
-  customerId    String
-  createdById   String
+  customerId    String    @db.Uuid
+  createdById   String    @db.Uuid
   
   // Business data
   status        String    @default("DRAFT") // DRAFT, SENT, APPROVED, REJECTED, EXPIRED
@@ -327,9 +327,9 @@ model Quote {
 
 /// Quote line item
 model QuoteLineItem {
-  id            String    @id @default(cuid())
-  quoteId       String
-  productId     String
+  id            String    @id @default(uuid()) @db.Uuid
+  quoteId       String    @db.Uuid
+  productId     String    @db.Uuid
   
   // Line details
   quantity      Int       @default(1)
@@ -354,10 +354,10 @@ model QuoteLineItem {
 
 /// Search session tracking
 model SearchSession {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   machineId     String?   @db.VarChar(255) // From offline store
-  userId        String?
+  userId        String?   @db.Uuid
   
   // Session metadata
   query         String    @db.Text
@@ -379,10 +379,10 @@ model SearchSession {
 
 /// Individual search result from a session
 model SearchResult {
-  id            String    @id @default(cuid())
-  sessionId     String
+  id            String    @id @default(uuid()) @db.Uuid
+  sessionId     String    @db.Uuid
   
-  productId     String
+  productId     String    @db.Uuid
   
   // Result metadata
   source        String    // "COMPANY_AVAILABLE", "COMPANY_ORDERABLE", "INTERNAL_REPLACEMENT", "AI_SUGGESTED_EXTERNAL"
@@ -408,7 +408,7 @@ model SearchResult {
 
 /// Search history for UI
 model SearchHistory {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   machineId     String?   @db.VarChar(255)
   query         String    @db.VarChar(500)
@@ -427,7 +427,7 @@ model SearchHistory {
 
 /// Staging area for bulk product imports
 model ImportRowStaging {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   // Import batch tracking
   batchId       String    @db.VarChar(100)
@@ -462,14 +462,14 @@ model ImportRowStaging {
 
 /// Approval queue for AI suggestions, imports, etc.
 model Approval {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   // What to approve
   entityType    String    @db.VarChar(100) // "PRODUCT_MAPPING", "IMPORT_BATCH"
   entityId      String    @db.VarChar(255)
   
   // Request details
-  requestedBy   String
+  requestedBy   String    @db.Uuid
   requestedAt   DateTime  @default(now())
   
   // Approval data
@@ -477,7 +477,7 @@ model Approval {
   
   // Approval tracking
   status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
-  approvedBy    String?
+  approvedBy    String?   @db.Uuid
   approvedAt    DateTime?
   rejectionReason String? @db.Text
   
@@ -496,9 +496,9 @@ model Approval {
 
 /// Comprehensive audit log
 model AuditLog {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
-  userId        String?
+  userId        String?   @db.Uuid
   userName      String?   @db.VarChar(255)
   userEmail     String?   @db.VarChar(255)
   
@@ -527,7 +527,7 @@ model AuditLog {
 
 /// Industry attribute definitions for multi-industry support
 model IndustryAttributeDef {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid()) @db.Uuid
   
   industry      String    @db.VarChar(100) // ISO, EN, API, etc.
   attributeName String    @db.VarChar(255)
