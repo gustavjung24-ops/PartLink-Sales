@@ -1,0 +1,114 @@
+name: Build & Release Installers
+
+# Trigger: push tag vX.Y.Z  (e.g. v1.0.0)
+# Secrets required (Settings → Secrets → Actions):
+#
+#   Windows EV Code Signing:
+#     WIN_CSC_LINK         — base64-encoded .p12 EV certificate
+#                            Generate: base64 -w 0 code-signing.p12 > cert.b64
+#     WIN_CSC_KEY_PASSWORD — password for the .p12 file
+#
+#   macOS Developer ID + Notarization:
+#     MAC_CSC_LINK                  — base64-encoded Developer ID Application .p12
+#     MAC_CSC_KEY_PASSWORD          — password for the .p12
+#     APPLE_ID                      — Apple ID email used for notarization
+#     APPLE_APP_SPECIFIC_PASSWORD   — App-specific password (appleid.apple.com)
+#     APPLE_TEAM_ID                 — 10-char Team ID (developer.apple.com)
+#
+#   Update Server:
+#     SPARELINK_UPDATE_URL           — base URL of the auto-update server
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write  # needed to create GitHub Release assets
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Windows — EV Code Signed NSIS Installer
+  # --------------------------------------------------------------------------
+  build-windows:
+    name: Windows (NSIS, x64, EV signed)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & sign Windows installer
+        env:
+          # electron-builder picks up WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD automatically.
+          # For EV tokens on HSM, set SPARELINK_WINDOWS_SIGNING_MODE=ev-token instead
+          # and configure signtool via a custom afterSign hook.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          SPARELINK_UPDATE_URL: ${{ secrets.SPARELINK_UPDATE_URL }}
+        run: node scripts/build-installer.js --win --publish
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: apps/desktop/release/**/*.exe
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # macOS — Notarized DMG + ZIP (x64 + arm64)
+  # --------------------------------------------------------------------------
+  build-mac:
+    name: macOS (DMG + ZIP, x64 + arm64, notarized)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, sign & notarize macOS
+        env:
+          # Developer ID Application certificate (.p12 base64)
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Notarization credentials — read by electron-builder notarize plugin
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARELINK_UPDATE_URL: ${{ secrets.SPARELINK_UPDATE_URL }}
+        run: node scripts/build-installer.js --mac --publish
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: |
+            apps/desktop/release/**/*.dmg
+            apps/desktop/release/**/*.zip
+          retention-days: 14
