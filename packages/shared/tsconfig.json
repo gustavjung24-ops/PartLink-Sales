@@ -3,10 +3,14 @@
   "compilerOptions": {
     "outDir": "./dist",
     "baseUrl": ".",
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@sparelink/shared": ["../../packages/shared/dist/index.js"],
-      "@sparelink/shared/*": ["../../packages/shared/dist/*"]
+      "@sparelink/shared": ["./src/index.ts"],
+      "@sparelink/shared/*": ["./src/*"]
     }
   },
   "include": ["src"],

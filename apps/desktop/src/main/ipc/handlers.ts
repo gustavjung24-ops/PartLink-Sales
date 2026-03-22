@@ -1,9 +1,10 @@
-import { app, BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import {
-  AuthLoginPayload,
+  type AuthLoginPayload,
   type FileReadPayload,
   type FileWritePayload,
+  IPC_CHANNELS,
   IPC_CHANNELS_LEGACY,
   type AppInfo,
   type WindowState
@@ -56,8 +57,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
   withErrorHandling<FileReadPayload, string>(
     IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE,
     async (_event, payload) => {
-      const content = await readFile(payload.filePath, payload.encoding ?? "utf-8");
-      return typeof content === "string" ? content : content.toString();
+      return readFile(payload.filePath, { encoding: payload.encoding ?? "utf-8" });
     }
   );
 
@@ -155,7 +155,13 @@ export function registerIpcHandlers(isVerbose: boolean): void {
 }
 
 export function unregisterIpcHandlers(): void {
-  Object.values(IPC_CHANNELS).forEach((channel) => {
-    ipcMain.removeHandler(channel);
+  // Flatten nested IPC_CHANNELS structure
+  const allChannels = Object.values(IPC_CHANNELS).flatMap(group =>
+    typeof group === "object" ? Object.values(group) : group
+  );
+  allChannels.forEach((channel) => {
+    if (typeof channel === "string") {
+      ipcMain.removeHandler(channel);
+    }
   });
 }

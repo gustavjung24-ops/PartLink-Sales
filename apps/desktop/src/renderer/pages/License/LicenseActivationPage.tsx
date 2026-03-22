@@ -187,7 +187,7 @@ interface LicenseDisplayCardProps {
 
 function LicenseDisplayCard({ license, state }: LicenseDisplayCardProps) {
   const daysRemaining = calculateDaysRemaining(license.expiresAt);
-  const isExpired = state === LicenseStateEnum.EXPIRED || state === LicenseStateEnum.EXPIRED;
+  const isExpired = state === LicenseStateEnum.EXPIRED;
   const isTrialing = state === LicenseStateEnum.TRIAL;
 
   return (

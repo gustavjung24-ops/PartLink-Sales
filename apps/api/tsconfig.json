@@ -5,8 +5,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@sparelink/shared": ["../../packages/shared/dist/index.js"],
-      "@sparelink/shared/*": ["../../packages/shared/dist/*"]
+       "@sparelink/shared": ["../../packages/shared/src/index.ts"],
+       "@sparelink/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["src"],

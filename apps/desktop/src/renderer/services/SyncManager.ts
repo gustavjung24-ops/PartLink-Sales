@@ -30,8 +30,8 @@ const DEFAULT_CONFIG: SyncManagerConfig = {
 export class SyncManager {
   private config: SyncManagerConfig;
   private isSyncing = false;
-  private syncTimer: NodeJS.Timer | null = null;
 
+  private syncTimer: NodeJS.Timeout | null = null;
   constructor(config: Partial<SyncManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
@@ -124,7 +124,7 @@ export class SyncManager {
 
         // For now, mark as synced
         for (const item of batch) {
-          store.updateSyncQueueItemStatus(item.id, "SYNCED");
+           store.updateSyncQueueItemStatus(item.id, "completed");
           store.recordSync("synced");
         }
 
@@ -140,7 +140,7 @@ export class SyncManager {
               console.log(`[SyncManager] Retrying item ${item.id}`);
             }, this.config.retryDelayMs * Math.pow(2, item.retryCount));
           } else {
-            store.updateSyncQueueItemStatus(item.id, "FAILED");
+              store.updateSyncQueueItemStatus(item.id, "failed");
             store.recordSync("failed");
           }
         }
@@ -205,7 +205,16 @@ export class SyncManager {
         break;
       case "MERGE":
         // Simple merge strategy: combine both objects
-        resolvedData = { ...serverData, ...clientData };
+          if (
+            typeof serverData === "object" &&
+            serverData !== null &&
+            typeof clientData === "object" &&
+            clientData !== null
+          ) {
+            resolvedData = { ...serverData, ...clientData };
+          } else {
+            resolvedData = clientData;
+          }
         break;
     }
 

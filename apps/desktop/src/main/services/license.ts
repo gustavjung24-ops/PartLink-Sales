@@ -39,8 +39,8 @@ const STATE_TRANSITIONS: Record<LicenseState, LicenseState[]> = {
 export class LicenseStateManager {
   private licenseData: LicenseData | null = null;
   private stateChangeListeners: ((event: LicenseStateChangeEvent) => void)[] = [];
-  private validationTimer: NodeJS.Timer | null = null;
 
+    private validationTimer: NodeJS.Timeout | null = null;
   /**
    * Initialize license from stored data
    */

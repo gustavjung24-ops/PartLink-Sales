@@ -87,9 +87,9 @@ export const useOfflineStore = create<OfflineStore>()(
         const newItem: SyncQueueItem = {
           ...item,
           id: generateId(),
-          status: "PENDING",
+            status: "pending",
           retryCount: 0,
-          createdAt: Date.now(),
+          timestamp: new Date().toISOString(),
         };
 
         set((state) => ({
@@ -116,15 +116,14 @@ export const useOfflineStore = create<OfflineStore>()(
               ? {
                   ...item,
                   status,
-                  syncedAt: status === "SYNCED" ? Date.now() : item.syncedAt,
                 }
-              : item
+                : item
           ),
         }));
       },
 
       getPendingSyncItems: () => {
-        return get().syncQueue.filter((item) => item.status === "PENDING");
+          return get().syncQueue.filter((item) => item.status === "pending");
       },
 
       clearSyncQueue: () => {

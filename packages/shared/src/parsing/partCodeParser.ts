@@ -17,16 +17,16 @@ import { ParsedCode, OperationResult, ResultType } from "../types";
  */
 const PART_CODE_PATTERNS = {
   // Texas Instruments: SN74HC04N
-  ti: /^SN(?P<series>\d{2})(?P<type>[A-Z]{2})\d{2}(?P<package>[A-Z]+)$/i,
 
   // Philips/NXP: MC321H100
-  nxp: /^MC(?P<series>\d{3})(?P<variant>[A-Z])\d{2,3}$/i,
 
   // Motorola: 2N2222A
-  motorola: /^(?P<series>\d[A-Z])\d{4}(?P<suffix>[A-Z])?$/i,
 
   // Generic: ABC-123-XYZ or ABC123XYZ
-  generic: /^(?P<manufacturer>[A-Z]{2,4})[\-]?(?P<number>\d{3,6})[\-]?(?P<variant>[A-Z0-9]{1,3})?$/i,
+  ti: /^SN(?<series>\d{2})(?<type>[A-Z]{2})\d{2}(?<package>[A-Z]+)$/i,
+  nxp: /^MC(?<series>\d{3})(?<variant>[A-Z])\d{2,3}$/i,
+  motorola: /^(?<series>\d[A-Z])\d{4}(?<suffix>[A-Z])?$/i,
+  generic: /^(?<manufacturer>[A-Z]{2,4})[\-]?(?<number>\d{3,6})[\-]?(?<variant>[A-Z0-9]{1,3})?$/i,
 };
 
 /**
