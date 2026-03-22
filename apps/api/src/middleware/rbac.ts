@@ -8,11 +8,10 @@ interface AuthenticatedUser {
   roles: Role[];
 }
 
-declare module "fastify" {
-  interface FastifyRequest {
-    user?: AuthenticatedUser;
-  }
-}
+// Type-safe request with user
+type AuthenticatedRequest = FastifyRequest & {
+  user?: AuthenticatedUser;
+};
 
 export function authGuard(
   request: FastifyRequest,
@@ -34,7 +33,8 @@ export function authGuard(
   const roleSegment = token.split(".")[1] || "USER";
   const role = roleSegment.toUpperCase() as Role;
 
-  request.user = {
+  const authRequest = request as AuthenticatedRequest;
+  authRequest.user = {
     id: "mock-user-id",
     email: "mock@sparelink.local",
     roles: [role],
@@ -45,7 +45,8 @@ export function authGuard(
 
 export function roleGuard(allowedRoles: Role[]) {
   return (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction): void => {
-    const userRoles = request.user?.roles ?? [];
+    const authRequest = request as AuthenticatedRequest;
+    const userRoles = authRequest.user?.roles ?? [];
     const hasPermission = userRoles.some((role) => allowedRoles.includes(role));
 
     if (!hasPermission) {

@@ -1,0 +1,546 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & AUTHORIZATION
+// ============================================================================
+
+/// User account in SPARELINK system
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique @db.VarChar(255)
+  name          String    @db.VarChar(255)
+  passwordHash  String    @db.VarChar(255)
+  
+  // Account status
+  active        Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  userRoles     UserRole[]
+  auditLogs     AuditLog[]
+  approvals     Approval[]
+  quotes        Quote[]
+  
+  @@index([email])
+  @@map("users")
+}
+
+/// Role definition (e.g., USER, SALES, SENIOR_SALES, ADMIN, SUPER_ADMIN)
+model Role {
+  id            String    @id @default(cuid())
+  name          String    @unique @db.VarChar(100)
+  description   String?   @db.Text
+  level         Int       @default(0) // For hierarchical checks
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  userRoles     UserRole[]
+  rolePermissions RolePermission[]
+  
+  @@map("roles")
+}
+
+/// Permission definition
+model Permission {
+  id            String    @id @default(cuid())
+  resource      String    @db.VarChar(100) // e.g., "quotes", "products"
+  action        String    @db.VarChar(100) // e.g., "create", "read", "approve"
+  description   String?   @db.Text
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  rolePermissions RolePermission[]
+  
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+/// Junction table: Role -> Permission (many-to-many)
+model RolePermission {
+  id            String    @id @default(cuid())
+  roleId        String
+  permissionId  String
+  
+  role          Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Junction table: User -> Role (many-to-many)
+model UserRole {
+  id            String    @id @default(cuid())
+  userId        String
+  roleId        String
+  
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+// ============================================================================
+// LICENSE MANAGEMENT
+// ============================================================================
+
+/// License key and activation tracking
+model License {
+  id            String    @id @default(cuid())
+  licenseKey    String    @unique @db.VarChar(255)
+  // Encrypted: customer_id|activation_count|expiry_date|signature
+  encryptedMetadata String @db.Text
+  
+  status        String    @default("PENDING") // PENDING, ACTIVATED, SUSPENDED, EXPIRED, REVOKED
+  purchaseDate  DateTime?
+  expiryDate    DateTime?
+  
+  // Trial licenses
+  isTrial       Boolean   @default(false)
+  trialEndDate  DateTime?
+  
+  // Activation limits
+  maxActivations Int      @default(3)
+  activationCount Int     @default(0)
+  
+  // Tracking
+  createdBy     String?   @db.VarChar(255)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  activations   Activation[]
+  
+  @@index([status])
+  @@index([expiryDate])
+  @@map("licenses")
+}
+
+/// Track each device/machine activation
+model Activation {
+  id            String    @id @default(cuid())
+  licenseId     String
+  machineId     String    @db.VarChar(255) // Fingerprint: CPU+Disk+Board serial
+  
+  fingerprint   String    @db.Text // JSON: {hwId, manufacturer, osType, appVersion}
+  
+  activatedAt   DateTime  @default(now())
+  lastValidatedAt DateTime?
+  expiresAt     DateTime  // 30 days after lastValidated
+  
+  // Rebinding tracking: only allow limited machine changes
+  rebindCount   Int       @default(0)
+  rebindLastAt  DateTime?
+  
+  status        String    @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED
+  
+  license       License   @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  
+  @@unique([licenseId, machineId])
+  @@index([machineId])
+  @@map("activations")
+}
+
+// ============================================================================
+// BUSINESS DATA: CUSTOMERS, PRODUCTS, QUOTES
+// ============================================================================
+
+/// Customer/Company information
+model Customer {
+  id            String    @id @default(cuid())
+  name          String    @db.VarChar(255)
+  email         String?   @db.VarChar(255)
+  phone         String?   @db.VarChar(50)
+  
+  // Address
+  address       String?   @db.Text
+  city          String?   @db.VarChar(100)
+  postalCode    String?   @db.VarChar(20)
+  country       String?   @db.VarChar(100)
+  
+  // Tax/regulatory
+  taxId         String?   @db.VarChar(50)
+  industry      String?   @db.VarChar(100)
+  
+  // Tracking
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  quotes        Quote[]
+  
+  @@index([email])
+  @@map("customers")
+}
+
+/// Product information
+model Product {
+  id            String    @id @default(cuid())
+  
+  // Product identity
+  name          String    @db.VarChar(255)
+  description   String?   @db.Text
+  
+  // Categorization
+  category      String    @db.VarChar(100)
+  subcategory   String?   @db.VarChar(100)
+  
+  // Multi-industry specs as JSONB structure
+  // E.g., { "ISO": {...}, "EN": {...}, "API": {...} }
+  specsJsonB    Json      @default("{}")
+  
+  // Availability
+  inStock       Int       @default(0)
+  unitPrice     Decimal   @db.Decimal(12, 2)
+  
+  // Tracking
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  productCodes  ProductCode[]
+  primaryMappings      ProductMapping[] @relation("primary")
+  alternateMappings    ProductMapping[] @relation("alternate")
+  quoteItems    QuoteLineItem[]
+  
+  @@index([category])
+  @@index([name])
+  @@map("products")
+}
+
+/// Normalized product codes (BRG-1234, HYD-5678, etc.)
+model ProductCode {
+  id            String    @id @default(cuid())
+  productId     String
+  
+  // Code variants
+  code          String    @unique @db.VarChar(50)
+  codeNormalized String   @unique @db.VarChar(50) // Lowercase, no spaces
+  
+  // Tokenized for full-text search (e.g., ["BRG", "1234"])
+  tokens        String[]  @default([]) // Array of token strings
+  
+  // Cross-reference / alternate codes
+  alternateCode String?   @db.VarChar(50)
+  sourceSystem  String?   @db.VarChar(100) // "INTERNAL", "SUPPLIER_A", etc.
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@index([codeNormalized])
+  @@index([alternateCode])
+  @@map("product_codes")
+}
+
+/// Product mapping: alternate codes, cross-references, AI suggestions
+model ProductMapping {
+  id            String    @id @default(cuid())
+  
+  // Primary product and alternate references
+  primaryProductId String
+  alternateProductId String?
+  
+  // Mapping metadata
+  mappingType   String    // "INTERNAL_REPLACEMENT", "SUPPLIER_EQUIVALENT", "AI_SUGGESTED"
+  confidence    Int       @default(100) // 0-100
+  requiresApproval Boolean @default(false)
+  
+  // AI suggestion tracking
+  aiModel       String?   @db.VarChar(100) // e.g., "gpt-4-turbo"
+  aiPrompt      String?   @db.Text
+  
+  // Revision tracking
+  revision      Int       @default(1) @db.SmallInt
+  status        String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUPERSEDED
+  rejectionReason String? @db.Text
+  
+  // Approval workflow
+  submittedBy   String?   @db.VarChar(255)
+  approvedBy    String?   @db.VarChar(255)
+  approvedAt    DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  primaryProduct Product  @relation("primary", fields: [primaryProductId], references: [id], onDelete: Cascade)
+  alternateProduct Product? @relation("alternate", fields: [alternateProductId], references: [id], onDelete: SetNull)
+  
+  @@index([mappingType])
+  @@index([status])
+  @@index([confidence])
+  @@map("product_mappings")
+}
+
+/// Quote: Sales proposal
+model Quote {
+  id            String    @id @default(cuid())
+  
+  // Quote identity
+  quoteNumber   String    @unique @db.VarChar(50)
+  customerId    String
+  createdById   String
+  
+  // Business data
+  status        String    @default("DRAFT") // DRAFT, SENT, APPROVED, REJECTED, EXPIRED
+  customerPO    String?   @db.VarChar(100)
+  notes         String?   @db.Text
+  
+  // Validity & pricing
+  validFrom     DateTime
+  validUntil    DateTime
+  totalPrice    Decimal   @db.Decimal(12, 2) @default(0)
+  
+  // Tracking
+  sentAt        DateTime?
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  customer      Customer  @relation(fields: [customerId], references: [id])
+  createdBy     User      @relation(fields: [createdById], references: [id])
+  lineItems     QuoteLineItem[]
+  
+  @@index([status])
+  @@index([customerId])
+  @@map("quotes")
+}
+
+/// Quote line item
+model QuoteLineItem {
+  id            String    @id @default(cuid())
+  quoteId       String
+  productId     String
+  
+  // Line details
+  quantity      Int       @default(1)
+  unitPrice     Decimal   @db.Decimal(12, 2)
+  totalPrice    Decimal   @db.Decimal(12, 2)
+  
+  notes         String?   @db.Text
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  quote         Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product       Product   @relation(fields: [productId], references: [id])
+  
+  @@index([quoteId])
+  @@map("quote_line_items")
+}
+
+// ============================================================================
+// SEARCH & ANALYTICS
+// ============================================================================
+
+/// Search session tracking
+model SearchSession {
+  id            String    @id @default(cuid())
+  
+  machineId     String?   @db.VarChar(255) // From offline store
+  userId        String?
+  
+  // Session metadata
+  query         String    @db.Text
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  resultCount   Int       @default(0)
+  
+  // Offline flag
+  isOffline     Boolean   @default(false)
+  syncedAt      DateTime?
+  
+  // Relations
+  results       SearchResult[]
+  
+  @@index([machineId])
+  @@index([startedAt])
+  @@map("search_sessions")
+}
+
+/// Individual search result from a session
+model SearchResult {
+  id            String    @id @default(cuid())
+  sessionId     String
+  
+  productId     String
+  
+  // Result metadata
+  source        String    // "COMPANY_AVAILABLE", "COMPANY_ORDERABLE", "INTERNAL_REPLACEMENT", "AI_SUGGESTED_EXTERNAL"
+  confidence    Int       @default(100) // 0-100
+  rank          Int       @default(0)
+  
+  // AI reasoning
+  reasoning     String?   @db.Text
+  
+  // Clicked/used?
+  clickedAt     DateTime?
+  addedToQuote  DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  session       SearchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@index([sessionId])
+  @@index([source])
+  @@map("search_results")
+}
+
+/// Search history for UI
+model SearchHistory {
+  id            String    @id @default(cuid())
+  
+  machineId     String?   @db.VarChar(255)
+  query         String    @db.VarChar(500)
+  resultCount   Int       @default(0)
+  
+  searchedAt    DateTime  @default(now())
+  
+  @@index([machineId])
+  @@index([searchedAt])
+  @@map("search_history")
+}
+
+// ============================================================================
+// DATA IMPORT & STAGING
+// ============================================================================
+
+/// Staging area for bulk product imports
+model ImportRowStaging {
+  id            String    @id @default(cuid())
+  
+  // Import batch tracking
+  batchId       String    @db.VarChar(100)
+  rowNumber     Int
+  
+  // Raw data
+  rawData       Json      @default("{}")
+  
+  // Processing state
+  status        String    @default("NEW") // NEW, VALIDATED, CONFLICT, TESTED, APPLIED, REJECTED
+  
+  // Conflict tracking
+  conflictType  String?   @db.VarChar(100) // e.g., "DUPLICATE_CODE", "SPEC_MISMATCH"
+  conflictData  Json?     @default("{}")
+  
+  // Audit
+  processedBy   String?   @db.VarChar(255)
+  processedAt   DateTime?
+  rejectionReason String? @db.Text
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([batchId])
+  @@index([status])
+  @@map("import_row_staging")
+}
+
+// ============================================================================
+// APPROVALS & WORKFLOWS
+// ============================================================================
+
+/// Approval queue for AI suggestions, imports, etc.
+model Approval {
+  id            String    @id @default(cuid())
+  
+  // What to approve
+  entityType    String    @db.VarChar(100) // "PRODUCT_MAPPING", "IMPORT_BATCH"
+  entityId      String    @db.VarChar(255)
+  
+  // Request details
+  requestedBy   String
+  requestedAt   DateTime  @default(now())
+  
+  // Approval data
+  data          Json      @default("{}")
+  
+  // Approval tracking
+  status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  approvedBy    String?
+  approvedAt    DateTime?
+  rejectionReason String? @db.Text
+  
+  updatedAt     DateTime  @updatedAt
+  
+  requestedByUser User    @relation(fields: [requestedBy], references: [id])
+  
+  @@index([entityType, entityId])
+  @@index([status])
+  @@map("approvals")
+}
+
+// ============================================================================
+// AUDIT & COMPLIANCE
+// ============================================================================
+
+/// Comprehensive audit log
+model AuditLog {
+  id            String    @id @default(cuid())
+  
+  userId        String?
+  userName      String?   @db.VarChar(255)
+  userEmail     String?   @db.VarChar(255)
+  
+  // Action
+  action        String    @db.VarChar(100) // CREATE, UPDATE, DELETE, APPROVE, REJECT, etc.
+  entityType    String    @db.VarChar(100) // User, License, Product, Quote, etc.
+  entityId      String?   @db.VarChar(255)
+  
+  // Details
+  changes       Json?     @default("{}")
+  reason        String?   @db.Text
+  
+  // Context
+  ipAddress     String?   @db.VarChar(50)
+  userAgent     String?   @db.Text
+  
+  createdAt     DateTime  @default(now())
+  
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Industry attribute definitions for multi-industry support
+model IndustryAttributeDef {
+  id            String    @id @default(cuid())
+  
+  industry      String    @db.VarChar(100) // ISO, EN, API, etc.
+  attributeName String    @db.VarChar(255)
+  
+  dataType      String    @db.VarChar(50) // STRING, NUMBER, ENUM, OBJECT
+  enumValues    String[]  @default([])
+  description   String?   @db.Text
+  
+  isRequired    Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@unique([industry, attributeName])
+  @@map("industry_attribute_defs")
+}

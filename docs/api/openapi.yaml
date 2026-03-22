@@ -1,0 +1,759 @@
+openapi: 3.0.0
+info:
+  title: SPARELINK API
+  description: |
+    Intelligent spare parts search platform with offline-first capabilities.
+    
+    ## Authentication
+    - All protected endpoints require JWT token in Authorization header
+    - Format: `Authorization: Bearer <jwt_token>`
+    - Token expiry: 24 hours (configurable)
+    - Refresh token expiry: 7 days
+    
+    ## Error Responses
+    All error responses follow this format:
+    ```json
+    {
+      "error": {
+        "code": "ERROR_CODE",
+        "message": "Human readable message",
+        "details": {}
+      }
+    }
+    ```
+    
+    ## Rate Limiting
+    - 100 requests per minute per user
+    - 1000 requests per minute per API key
+    
+  version: 1.0.0
+  contact:
+    name: SPARELINK Support
+    url: https://sparelink.local
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.sparelink.com/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User login, logout, token refresh
+  - name: Products
+    description: Product search, details, imports
+  - name: Quotes
+    description: Quote creation, management, approval
+  - name: Licenses
+    description: License activation, validation, rebinding
+  - name: Mappings
+    description: Product mapping suggestions and approvals
+  - name: History
+    description: Search history and analytics
+  - name: Approvals
+    description: Approval workflow management
+  - name: Admin
+    description: Administrative operations
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token (24h expiry)
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+      required:
+        - error
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [USER, SALES, SENIOR_SALES, ADMIN, SUPER_ADMIN]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: string
+          format: date-time
+
+    License:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        licenseKey:
+          type: string
+          example: SL-2024-A1B2-C3D4-E5F6
+        status:
+          type: string
+          enum: [PENDING, ACTIVATED, SUSPENDED, EXPIRED, REVOKED]
+        expiryDate:
+          type: string
+          format: date-time
+        isTrial:
+          type: boolean
+        maxActivations:
+          type: integer
+        activationCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    Activation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        machineId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, EXPIRED, REVOKED]
+        activatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        rebindCount:
+          type: integer
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        subcategory:
+          type: string
+        unitPrice:
+          type: number
+          format: decimal
+        inStock:
+          type: integer
+        specsJsonB:
+          type: object
+          description: Industry-specific specifications per ISO, EN, API standards
+        createdAt:
+          type: string
+          format: date-time
+
+    ProductCode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: BRG-1234
+        codeNormalized:
+          type: string
+        sourceSystem:
+          type: string
+        alternateCode:
+          type: string
+
+    SearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        product:
+          $ref: '#/components/schemas/Product'
+        source:
+          type: string
+          enum: [COMPANY_AVAILABLE, COMPANY_ORDERABLE, INTERNAL_REPLACEMENT, AI_SUGGESTED_EXTERNAL]
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+        reasoning:
+          type: string
+          description: AI reasoning for suggestion
+
+    Quote:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        quoteNumber:
+          type: string
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [DRAFT, SENT, APPROVED, REJECTED, EXPIRED]
+        totalPrice:
+          type: number
+          format: decimal
+        validFrom:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        lineItems:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              productId:
+                type: string
+              quantity:
+                type: integer
+              unitPrice:
+                type: number
+              totalPrice:
+                type: number
+
+    Approval:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+          enum: [PRODUCT_MAPPING, IMPORT_BATCH]
+        entityId:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        requestedBy:
+          type: string
+          format: uuid
+        requestedAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+          format: uuid
+        approvedAt:
+          type: string
+          format: date-time
+        rejectionReason:
+          type: string
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+
+  /auth/login:
+    post:
+      summary: User login
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+              required:
+                - email
+                - password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/refresh:
+    post:
+      summary: Refresh JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+              required:
+                - refreshToken
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+
+  /auth/me:
+    get:
+      summary: Get current user
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+
+  /products/search:
+    get:
+      summary: Search products by code or name
+      tags:
+        - Products
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResult'
+
+  /products/{id}:
+    get:
+      summary: Get product details
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+
+  /products/import:
+    post:
+      summary: Import product batch
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                batchId:
+                  type: string
+                rows:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                      name:
+                        type: string
+                      category:
+                        type: string
+                      unitPrice:
+                        type: number
+                      specsJsonB:
+                        type: object
+      responses:
+        '201':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch:
+                    type: string
+                  rowIds:
+                    type: array
+                    items:
+                      type: string
+
+  /licenses/activate:
+    post:
+      summary: Activate license on device
+      tags:
+        - Licenses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                licenseKey:
+                  type: string
+                machineId:
+                  type: string
+                fingerprint:
+                  type: object
+                  description: Device fingerprint {hwId, manufacturer, osType}
+      responses:
+        '200':
+          description: Activation successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activated:
+                    type: boolean
+                  license:
+                    $ref: '#/components/schemas/License'
+                  activation:
+                    $ref: '#/components/schemas/Activation'
+
+  /licenses/validate:
+    post:
+      summary: Validate license on device
+      tags:
+        - Licenses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                licenseKey:
+                  type: string
+                machineId:
+                  type: string
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  reason:
+                    type: string
+                  daysRemaining:
+                    type: integer
+
+  /quotes:
+    get:
+      summary: List quotes
+      tags:
+        - Quotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, SENT, APPROVED, REJECTED, EXPIRED]
+        - name: customerId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of quotes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Quote'
+
+    post:
+      summary: Create new quote
+      tags:
+        - Quotes
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customerId:
+                  type: string
+                lineItems:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      productId:
+                        type: string
+                      quantity:
+                        type: integer
+                      unitPrice:
+                        type: number
+                validFrom:
+                  type: string
+                  format: date-time
+                validUntil:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Quote created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+
+  /quotes/{id}:
+    get:
+      summary: Get quote details
+      tags:
+        - Quotes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Quote details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+
+    put:
+      summary: Update quote
+      tags:
+        - Quotes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Quote updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+
+  /approvals:
+    get:
+      summary: List pending approvals
+      tags:
+        - Approvals
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entityType
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Approval'
+
+  /approvals/{id}/approve:
+    post:
+      summary: Approve a request
+      tags:
+        - Approvals
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Approval processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+
+  /approvals/{id}/reject:
+    post:
+      summary: Reject a request
+      tags:
+        - Approvals
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+              required:
+                - reason
+      responses:
+        '200':
+          description: Rejection processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
