@@ -3,12 +3,16 @@ name: Build & Release Installers
 # Trigger: push tag vX.Y.Z  (e.g. v1.0.0)
 # Secrets required (Settings → Secrets → Actions):
 #
-#   Windows EV Code Signing:
+# ⚠️  NEVER commit .p12 / .pfx files to the repository.
+#     Encode them as base64 and store as CI secrets:
+#       base64 -w 0 your-cert.p12   # Linux
+#       base64 -i  your-cert.p12   # macOS
+#
+#   Windows EV Code Signing (electron-builder reads WIN_CSC_LINK automatically):
 #     WIN_CSC_LINK         — base64-encoded .p12 EV certificate
-#                            Generate: base64 -w 0 code-signing.p12 > cert.b64
 #     WIN_CSC_KEY_PASSWORD — password for the .p12 file
 #
-#   macOS Developer ID + Notarization:
+#   macOS Developer ID + Notarization (uses xcrun notarytool, altool removed in Xcode 15):
 #     MAC_CSC_LINK                  — base64-encoded Developer ID Application .p12
 #     MAC_CSC_KEY_PASSWORD          — password for the .p12
 #     APPLE_ID                      — Apple ID email used for notarization

@@ -2,7 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
+    <!-- Electron does not use the macOS App Sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <!-- Required for V8 JIT compilation -->
     <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Required for some native Node modules that execute unsigned code -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <key>com.apple.security.network.client</key>
     <true/>
