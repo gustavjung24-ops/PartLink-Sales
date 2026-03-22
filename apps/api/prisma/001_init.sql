@@ -143,16 +143,22 @@ CREATE TABLE activations (
   license_id UUID NOT NULL,
   machine_id VARCHAR(255) NOT NULL,
   fingerprint TEXT NOT NULL,
-  activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_validated_at TIMESTAMP,
+  activated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  last_validated_at TIMESTAMPTZ,
   -- Server-issued nonce metadata to detect client clock rollback attacks
+  -- server_nonce should be random hex (>= 16 chars) and rotate after each successful
+  -- online validation. nonce_issued_at is server UTC timestamp used for rollback checks.
   server_nonce TEXT,
   nonce_issued_at TIMESTAMPTZ,
-  expires_at TIMESTAMP NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
   rebind_count INT DEFAULT 0,
-  rebind_last_at TIMESTAMP,
+  rebind_last_at TIMESTAMPTZ,
   status activation_status_enum DEFAULT 'ACTIVE',
   FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE,
+  CONSTRAINT chk_activations_nonce_consistency CHECK (
+    (server_nonce IS NULL AND nonce_issued_at IS NULL)
+    OR (server_nonce IS NOT NULL AND LENGTH(TRIM(server_nonce)) >= 16 AND nonce_issued_at IS NOT NULL)
+  ),
   UNIQUE(license_id, machine_id)
 );
 

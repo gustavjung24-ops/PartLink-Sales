@@ -141,16 +141,16 @@ model Activation {
   
   fingerprint   String    @db.Text // JSON: {hwId, manufacturer, osType, appVersion}
   
-  activatedAt   DateTime  @default(now())
-  lastValidatedAt DateTime?
+  activatedAt   DateTime  @default(now()) @db.Timestamptz
+  lastValidatedAt DateTime? @db.Timestamptz
   // Server nonce/challenge to detect client time rollback when validating offline cache
   serverNonce   String?   @db.Text
   nonceIssuedAt DateTime? @db.Timestamptz
-  expiresAt     DateTime  // 30 days after lastValidated
+  expiresAt     DateTime  @db.Timestamptz // 30 days after lastValidated
   
   // Rebinding tracking: only allow limited machine changes
   rebindCount   Int       @default(0)
-  rebindLastAt  DateTime?
+  rebindLastAt  DateTime? @db.Timestamptz
   
   status        String    @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED
   
