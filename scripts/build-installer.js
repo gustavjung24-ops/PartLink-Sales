@@ -46,7 +46,7 @@ if (missingFiles.length > 0) {
   process.exit(1);
 }
 
-function validateSigning(): void {
+function validateSigning() {
   if (unsigned) {
     console.warn("[build-installer] Running unsigned build. Do not use artifacts for commercial release.");
     return;
