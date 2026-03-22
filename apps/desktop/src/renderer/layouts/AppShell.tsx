@@ -1,4 +1,6 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { LicenseInfoWidget } from "../components/LicenseGuard";
 import { useThemeStore } from "../stores/uiStore";
 
 function ThemeToggle(): JSX.Element {
@@ -17,6 +19,32 @@ function ThemeToggle(): JSX.Element {
 }
 
 export function AppShell(): JSX.Element {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkLicense = async () => {
+      try {
+        const isValid = await window.electronAPI.license.isValid();
+
+        if (isMounted && !isValid) {
+          navigate("/license", { replace: true });
+        }
+      } catch {
+        if (isMounted) {
+          navigate("/license", { replace: true });
+        }
+      }
+    };
+
+    void checkLicense();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#fff8e7,_#f3f4f6_45%,_#e2e8f0)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,_#1e293b,_#0f172a_45%,_#020617)] dark:text-slate-100">
       <header className="border-b border-slate-200/70 bg-white/70 backdrop-blur dark:border-slate-800 dark:bg-slate-950/70">
@@ -41,6 +69,7 @@ export function AppShell(): JSX.Element {
             >
               Settings
             </NavLink>
+            <LicenseInfoWidget />
             <ThemeToggle />
           </nav>
         </div>

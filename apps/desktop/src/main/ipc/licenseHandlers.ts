@@ -11,6 +11,7 @@ import { licenseStateManager } from "../services/license";
 import { licenseApiService } from "../services/licenseApi";
 import type {
   DeviceFingerprint,
+  DeviceRebindingStatus,
   LicenseData,
   LicenseValidationResponse,
 } from "@sparelink/shared";
@@ -23,6 +24,7 @@ export const IPC_LICENSE_CHANNELS = {
   "license:deactivate": "license:deactivate",
   "license:get-state": "license:get-state",
   "license:is-valid": "license:is-valid",
+  "license:can-rebind": "license:can-rebind",
 } as const;
 
 /**
@@ -127,6 +129,13 @@ export function registerLicenseHandlers(): void {
     IPC_LICENSE_CHANNELS["license:is-valid"],
     async () => {
       return licenseStateManager.isLicenseValid();
+    }
+  );
+
+  withErrorHandling<void, DeviceRebindingStatus>(
+    IPC_LICENSE_CHANNELS["license:can-rebind"],
+    async () => {
+      return licenseStateManager.canRebindDevice();
     }
   );
 }

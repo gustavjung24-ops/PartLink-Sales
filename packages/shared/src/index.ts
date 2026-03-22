@@ -8,4 +8,4 @@
  * └── Parsing utilities
  */
 export * from "./types";
-export * from "./parsing";
+export * from "./parsing/partCodeParser";

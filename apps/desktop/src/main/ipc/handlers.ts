@@ -9,6 +9,7 @@ import {
   type AppInfo,
   type WindowState
 } from "@/shared/electronApi";
+import { registerLicenseHandlers } from "./licenseHandlers";
 import { withErrorHandling } from "./utils";
 
 /**
@@ -27,6 +28,8 @@ function getSenderWindow(event: IpcMainInvokeEvent): BrowserWindow {
  * Platform Layer: Centralized IPC registration with standardized error responses
  */
 export function registerIpcHandlers(isVerbose: boolean): void {
+  registerLicenseHandlers();
+
   /**
    * AUTH: Login handler
    */

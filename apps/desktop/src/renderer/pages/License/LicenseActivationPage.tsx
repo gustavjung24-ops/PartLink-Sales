@@ -10,7 +10,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import type { LicenseData, LicenseState, LicenseValidationResponse } from "@sparelink/shared";
+import type { DeviceRebindingStatus, LicenseData, LicenseState } from "@sparelink/shared";
 import { LicenseState as LicenseStateEnum } from "@sparelink/shared";
 
 interface LicenseActivationPageProps {
@@ -26,13 +26,26 @@ export function LicenseActivationPage({ onActivationSuccess }: LicenseActivation
   const [pageState, setPageState] = useState<PageState>("IDLE");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [rebindInfo, setRebindInfo] = useState<DeviceRebindingStatus | null>(null);
 
   /**
    * Load current license on component mount
    */
   useEffect(() => {
-    loadCurrentLicense();
+    void loadCurrentLicense();
   }, []);
+
+  useEffect(() => {
+    if (!currentLicense) {
+      setRebindInfo(null);
+      return;
+    }
+
+    void window.electronAPI.license
+      .canRebind()
+      .then(setRebindInfo)
+      .catch(() => setRebindInfo(null));
+  }, [currentLicense]);
 
   const loadCurrentLicense = async () => {
     try {
@@ -67,6 +80,7 @@ export function LicenseActivationPage({ onActivationSuccess }: LicenseActivation
 
       setCurrentLicense(response.licenseData);
       setLicenseState(response.status);
+      setRebindInfo(await window.electronAPI.license.canRebind());
       setSuccessMessage(`✓ License activated successfully: ${response.licenseData.productName}`);
       setLicenseKey("");
       setPageState("SUCCESS");
@@ -81,6 +95,10 @@ export function LicenseActivationPage({ onActivationSuccess }: LicenseActivation
 
   const handleDeactivate = async () => {
     if (!currentLicense) return;
+    if (rebindInfo?.allowed === false) {
+      setErrorMessage("Monthly device transfer limit reached.");
+      return;
+    }
 
     if (!window.confirm("Deactivate license for device switch? You can activate on another device.")) {
       return;
@@ -93,6 +111,7 @@ export function LicenseActivationPage({ onActivationSuccess }: LicenseActivation
       await window.electronAPI.license.deactivate();
       setCurrentLicense(null);
       setLicenseState(LicenseStateEnum.DEACTIVATED);
+      setRebindInfo(null);
       setSuccessMessage("✓ License deactivated. Ready for new device activation.");
       setPageState("SUCCESS");
     } catch (error) {
@@ -164,9 +183,16 @@ export function LicenseActivationPage({ onActivationSuccess }: LicenseActivation
       {/* Deactivate Button */}
       {currentLicense && licenseState !== LicenseStateEnum.DEACTIVATED && (
         <div className="mt-8">
+          {rebindInfo && (
+            <p className="mb-2 text-sm text-gray-500">
+              {rebindInfo.remaining > 0
+                ? `${rebindInfo.remaining} device transfer(s) remaining this month`
+                : "No device transfers remaining this month"}
+            </p>
+          )}
           <button
             onClick={handleDeactivate}
-            disabled={pageState === "DEACTIVATING"}
+            disabled={pageState === "DEACTIVATING" || rebindInfo?.allowed === false}
             className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
           >
             {pageState === "DEACTIVATING" ? "Deactivating..." : "Deactivate for Device Switch"}

@@ -25,7 +25,7 @@ export interface OfflineStore {
 
   // Sync queue
   syncQueue: SyncQueueItem[];
-  addToSyncQueue: (item: Omit<SyncQueueItem, "id" | "status" | "retryCount" | "createdAt">) => void;
+  addToSyncQueue: (item: Omit<SyncQueueItem, "id" | "status" | "retryCount" | "timestamp">) => void;
   removeSyncQueueItem: (id: string) => void;
   updateSyncQueueItemStatus: (id: string, status: SyncQueueItem["status"]) => void;
   getPendingSyncItems: () => SyncQueueItem[];
@@ -87,7 +87,7 @@ export const useOfflineStore = create<OfflineStore>()(
         const newItem: SyncQueueItem = {
           ...item,
           id: generateId(),
-            status: "pending",
+          status: "pending",
           retryCount: 0,
           timestamp: new Date().toISOString(),
         };
@@ -123,7 +123,7 @@ export const useOfflineStore = create<OfflineStore>()(
       },
 
       getPendingSyncItems: () => {
-          return get().syncQueue.filter((item) => item.status === "pending");
+        return get().syncQueue.filter((item) => item.status === "pending");
       },
 
       clearSyncQueue: () => {

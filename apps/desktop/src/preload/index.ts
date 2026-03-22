@@ -58,6 +58,7 @@ const electronAPI: ElectronAPI = {
     deactivate: () => invokeIpc(IPC_CHANNELS.license.DEACTIVATE),
     getState: () => invokeIpc(IPC_CHANNELS.license.GET_STATE),
     isValid: () => invokeIpc(IPC_CHANNELS.license.IS_VALID),
+    canRebind: () => invokeIpc(IPC_CHANNELS.license.CAN_REBIND),
   },
   events: {
     onWindowStateChanged: (handler: (state: WindowState) => void) => {

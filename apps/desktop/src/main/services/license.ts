@@ -9,7 +9,12 @@
  * - Mocked database persistence
  */
 
-import type { LicenseData, LicenseState, LicenseStateChangeEvent } from "@sparelink/shared";
+import type {
+  DeviceRebindingStatus,
+  LicenseData,
+  LicenseState,
+  LicenseStateChangeEvent,
+} from "@sparelink/shared";
 import { LicenseState as LicenseStateEnum } from "@sparelink/shared";
 
 /**
@@ -40,7 +45,7 @@ export class LicenseStateManager {
   private licenseData: LicenseData | null = null;
   private stateChangeListeners: ((event: LicenseStateChangeEvent) => void)[] = [];
 
-    private validationTimer: NodeJS.Timeout | null = null;
+  private validationTimer: NodeJS.Timeout | null = null;
   /**
    * Initialize license from stored data
    */
@@ -133,11 +138,20 @@ export class LicenseStateManager {
    * Set license from activation or validation response
    */
   setLicense(licenseData: LicenseData, isFirstActivation: boolean = false): void {
+    const previousState = this.getCurrentState();
     this.licenseData = licenseData;
     this.updateStateBasedOnExpiry();
 
     if (isFirstActivation) {
-      this.transitionState(licenseData.status, "Initial activation");
+      const event: LicenseStateChangeEvent = {
+        previousState,
+        newState: this.licenseData.status,
+        reason: "Initial activation",
+        timestamp: Date.now(),
+        licenseData: this.licenseData,
+      };
+
+      this.stateChangeListeners.forEach((listener) => listener(event));
     }
 
     console.log(`[License Manager] License set: ${licenseData.productName} (expires: ${new Date(licenseData.expiresAt).toISOString()})`);
@@ -276,6 +290,26 @@ export class LicenseStateManager {
       current: this.licenseData.totalResets || 0,
       max: this.licenseData.maxDeviceResets,
       remaining: Math.max(0, this.licenseData.maxDeviceResets - (this.licenseData.totalResets || 0)),
+    };
+  }
+
+  canRebindDevice(): DeviceRebindingStatus {
+    const info = this.getDeviceRebindingInfo();
+
+    if (!info) {
+      return {
+        allowed: false,
+        current: 0,
+        max: 0,
+        remaining: 0,
+      };
+    }
+
+    return {
+      allowed: info.remaining > 0,
+      current: info.current,
+      max: info.max,
+      remaining: info.remaining,
     };
   }
 }

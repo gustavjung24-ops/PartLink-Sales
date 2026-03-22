@@ -128,6 +128,16 @@ export interface DeviceRebindingRecord {
 }
 
 /**
+ * Device rebinding availability for current license
+ */
+export interface DeviceRebindingStatus {
+  allowed: boolean;
+  current: number;
+  max: number;
+  remaining: number;
+}
+
+/**
  * License metadata for UI display
  */
 export interface LicenseDisplayInfo {

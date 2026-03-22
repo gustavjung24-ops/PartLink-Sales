@@ -5,13 +5,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-       "@sparelink/shared": ["../../packages/shared/src/index.ts"],
-       "@sparelink/shared/*": ["../../packages/shared/src/*"]
+      "@sparelink/shared": ["../../packages/shared/src/index.ts"],
+      "@sparelink/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules"],
-  "references": [
-    { "path": "../../packages/shared" }
-  ]
+  "exclude": ["dist", "node_modules"]
 }

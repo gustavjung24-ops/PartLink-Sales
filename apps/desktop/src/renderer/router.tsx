@@ -1,9 +1,15 @@
 import { createHashRouter, Navigate } from "react-router-dom";
+import { LicenseGuard } from "./components/LicenseGuard";
 import { AppShell } from "./layouts/AppShell";
 import { DashboardPage } from "./pages/DashboardPage";
+import { LicenseActivationPage } from "./pages/License/LicenseActivationPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export const router = createHashRouter([
+  {
+    path: "/license",
+    element: <LicenseActivationPage />,
+  },
   {
     path: "/",
     element: <AppShell />,
@@ -14,11 +20,19 @@ export const router = createHashRouter([
       },
       {
         path: "dashboard",
-        element: <DashboardPage />
+        element: (
+          <LicenseGuard>
+            <DashboardPage />
+          </LicenseGuard>
+        )
       },
       {
         path: "settings",
-        element: <SettingsPage />
+        element: (
+          <LicenseGuard>
+            <SettingsPage />
+          </LicenseGuard>
+        )
       }
     ]
   }

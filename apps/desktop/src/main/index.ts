@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { IPC_CHANNELS } from "@/shared/electronApi";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc/handlers";
+import { licenseStateManager } from "./services/license";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,7 +42,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   const sendWindowState = () => {
-    browserWindow.webContents.send(IPC_CHANNELS.WINDOW_STATE_CHANGED, {
+    browserWindow.webContents.send(IPC_CHANNELS.window.STATE_CHANGED, {
       isMaximized: browserWindow.isMaximized(),
       isMinimized: browserWindow.isMinimized()
     });
@@ -77,9 +78,11 @@ if (!hasSingleInstanceLock) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await licenseStateManager.initialize(null);
     registerIpcHandlers(process.env.DEBUG_IPC === "true");
     mainWindow = createMainWindow();
+    licenseStateManager.startValidationTimer();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -95,6 +98,7 @@ if (!hasSingleInstanceLock) {
   });
 
   app.on("before-quit", () => {
+    licenseStateManager.stopValidationTimer();
     unregisterIpcHandlers();
   });
 }

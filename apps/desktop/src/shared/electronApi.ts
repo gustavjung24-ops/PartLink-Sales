@@ -14,7 +14,12 @@ export interface IpcResponse<T = unknown> {
 }
 
 // Import license types from shared package
-import type { DeviceFingerprint, LicenseData, LicenseValidationResponse } from "@sparelink/shared";
+import type {
+  DeviceFingerprint,
+  DeviceRebindingStatus,
+  LicenseData,
+  LicenseValidationResponse,
+} from "@sparelink/shared";
 
 export interface AuthLoginPayload {
   username: string;
@@ -77,6 +82,7 @@ export interface ElectronAPI {
     deactivate: () => Promise<void>;
     getState: () => Promise<string>;
     isValid: () => Promise<boolean>;
+    canRebind: () => Promise<DeviceRebindingStatus>;
   };
   events: {
     onWindowStateChanged: (handler: (state: WindowState) => void) => () => void;
@@ -112,6 +118,7 @@ export const IPC_CHANNELS = {
     DEACTIVATE: "license:deactivate",
     GET_STATE: "license:get-state",
     IS_VALID: "license:is-valid",
+    CAN_REBIND: "license:can-rebind",
   },
 } as const;
 

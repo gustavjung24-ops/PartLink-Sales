@@ -4,6 +4,7 @@
  */
 
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useLicenseProtection } from "../hooks/useLicense";
 import { LicenseState } from "@sparelink/shared";
 
@@ -16,49 +17,22 @@ interface LicenseGuardProps {
  * Wrapper component for license-protected pages
  */
 export function LicenseGuard({ children, fallback }: LicenseGuardProps) {
+  const navigate = useNavigate();
   const { isAccessAllowed, isLoading, needsActivation, isExpired, isSuspended } =
     useLicenseProtection();
+
+  React.useEffect(() => {
+    if (!isLoading && (needsActivation || isExpired)) {
+      navigate("/license", { replace: true });
+    }
+  }, [isExpired, isLoading, needsActivation, navigate]);
 
   if (isLoading) {
     return <div className="p-6 text-center">Checking license...</div>;
   }
 
-  if (needsActivation) {
-    return (
-      fallback || (
-        <div className="p-6 max-w-md mx-auto">
-          <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">License Required</h2>
-            <p className="text-sm mb-4">Please activate a license to use this feature.</p>
-            <a
-              href="/license"
-              className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Go to License Activation
-            </a>
-          </div>
-        </div>
-      )
-    );
-  }
-
-  if (isExpired) {
-    return (
-      fallback || (
-        <div className="p-6 max-w-md mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">License Expired</h2>
-            <p className="text-sm mb-4">Your license has expired. Please renew to continue.</p>
-            <a
-              href="/license"
-              className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Renew License
-            </a>
-          </div>
-        </div>
-      )
-    );
+  if (!isAccessAllowed && !isSuspended) {
+    return null;
   }
 
   if (isSuspended) {
@@ -70,19 +44,6 @@ export function LicenseGuard({ children, fallback }: LicenseGuardProps) {
             <p className="text-sm">
               Your license has been suspended. Please contact support for assistance.
             </p>
-          </div>
-        </div>
-      )
-    );
-  }
-
-  if (!isAccessAllowed) {
-    return (
-      fallback || (
-        <div className="p-6 max-w-md mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">Access Denied</h2>
-            <p className="text-sm">You don't have access to this feature.</p>
           </div>
         </div>
       )

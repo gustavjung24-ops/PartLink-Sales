@@ -10,10 +10,10 @@
   },
   "scripts": {
     "dev": "pnpm --recursive dev",
-    "build": "pnpm --recursive build",
+    "build": "pnpm --filter @sparelink/shared build && pnpm -r --filter './apps/*' build",
     "test": "pnpm --recursive test",
     "lint": "pnpm --recursive lint",
-    "type-check": "pnpm --recursive type-check",
+    "type-check": "pnpm --filter @sparelink/shared type-check && pnpm -r --filter './apps/*' type-check",
     "postinstall": "pnpm --recursive exec -- node -e \"console.log('Installed')\""
   },
   "devDependencies": {
