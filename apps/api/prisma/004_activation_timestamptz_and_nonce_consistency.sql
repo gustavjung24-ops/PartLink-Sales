@@ -20,15 +20,21 @@ BEGIN;
 --    This makes the migration safe/no-op on already-patched environments.
 DO $$
 DECLARE
-  activated_type text;
+  legacy_ts_columns int;
 BEGIN
-  SELECT data_type INTO activated_type
+  SELECT COUNT(*) INTO legacy_ts_columns
   FROM information_schema.columns
   WHERE table_schema = 'public'
     AND table_name = 'activations'
-    AND column_name = 'activated_at';
+    AND column_name IN (
+      'activated_at',
+      'last_validated_at',
+      'expires_at',
+      'rebind_last_at'
+    )
+    AND data_type = 'timestamp without time zone';
 
-  IF activated_type = 'timestamp without time zone' THEN
+  IF legacy_ts_columns > 0 THEN
     EXECUTE $sql$
       ALTER TABLE activations
         ALTER COLUMN activated_at TYPE TIMESTAMPTZ USING activated_at AT TIME ZONE 'UTC',
