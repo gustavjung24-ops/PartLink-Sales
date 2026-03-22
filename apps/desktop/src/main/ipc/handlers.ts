@@ -4,7 +4,7 @@ import {
   AuthLoginPayload,
   type FileReadPayload,
   type FileWritePayload,
-  IPC_CHANNELS,
+  IPC_CHANNELS_LEGACY,
   type AppInfo,
   type WindowState
 } from "@/shared/electronApi";
@@ -30,7 +30,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * AUTH: Login handler
    */
   withErrorHandling<AuthLoginPayload, { accessToken: string; expiresIn: number }>(
-    IPC_CHANNELS.AUTH_LOGIN,
+    IPC_CHANNELS_LEGACY.AUTH_LOGIN,
     async (_event, payload) => {
       if (isVerbose) {
         console.info("[ipc] auth:login", payload.username);
@@ -46,7 +46,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * AUTH: Logout handler
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.AUTH_LOGOUT,
+    IPC_CHANNELS_LEGACY.AUTH_LOGOUT,
     async () => undefined
   );
 
@@ -54,7 +54,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * FILE SYSTEM: Read text file
    */
   withErrorHandling<FileReadPayload, string>(
-    IPC_CHANNELS.FILESYSTEM_READ_TEXT_FILE,
+    IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE,
     async (_event, payload) => {
       const content = await readFile(payload.filePath, payload.encoding ?? "utf-8");
       return typeof content === "string" ? content : content.toString();
@@ -65,7 +65,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * FILE SYSTEM: Write text file
    */
   withErrorHandling<FileWritePayload, void>(
-    IPC_CHANNELS.FILESYSTEM_WRITE_TEXT_FILE,
+    IPC_CHANNELS_LEGACY.FILESYSTEM_WRITE_TEXT_FILE,
     async (_event, payload) => {
       await writeFile(payload.filePath, payload.content, payload.encoding ?? "utf-8");
     }
@@ -75,7 +75,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * APP: Get application info
    */
   withErrorHandling<void, AppInfo>(
-    IPC_CHANNELS.APP_GET_INFO,
+    IPC_CHANNELS_LEGACY.APP_GET_INFO,
     async (): Promise<AppInfo> => ({
       name: app.getName(),
       version: app.getVersion(),
@@ -88,7 +88,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Minimize
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.WINDOW_MINIMIZE,
+    IPC_CHANNELS_LEGACY.WINDOW_MINIMIZE,
     async (event) => {
       getSenderWindow(event).minimize();
     }
@@ -98,7 +98,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Maximize
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.WINDOW_MAXIMIZE,
+    IPC_CHANNELS_LEGACY.WINDOW_MAXIMIZE,
     async (event) => {
       getSenderWindow(event).maximize();
     }
@@ -108,7 +108,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Unmaximize
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.WINDOW_UNMAXIMIZE,
+    IPC_CHANNELS_LEGACY.WINDOW_UNMAXIMIZE,
     async (event) => {
       getSenderWindow(event).unmaximize();
     }
@@ -118,7 +118,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Toggle maximize
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE,
+    IPC_CHANNELS_LEGACY.WINDOW_TOGGLE_MAXIMIZE,
     async (event) => {
       const window = getSenderWindow(event);
       if (window.isMaximized()) {
@@ -133,7 +133,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Close
    */
   withErrorHandling<void, void>(
-    IPC_CHANNELS.WINDOW_CLOSE,
+    IPC_CHANNELS_LEGACY.WINDOW_CLOSE,
     async (event) => {
       getSenderWindow(event).close();
     }
@@ -143,7 +143,7 @@ export function registerIpcHandlers(isVerbose: boolean): void {
    * WINDOW: Get state
    */
   withErrorHandling<void, WindowState>(
-    IPC_CHANNELS.WINDOW_GET_STATE,
+    IPC_CHANNELS_LEGACY.WINDOW_GET_STATE,
     async (event): Promise<WindowState> => {
       const window = getSenderWindow(event);
       return {

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC_CHANNELS, type ElectronAPI, type WindowState, type IpcResponse } from "@/shared/electronApi";
+import { IPC_CHANNELS_LEGACY, IPC_CHANNELS, type ElectronAPI, type WindowState, type IpcResponse } from "@/shared/electronApi";
 
 /**
  * Adapter: Converts IpcResponse<T> to T or throws error
@@ -32,23 +32,32 @@ async function invokeIpc<T>(channel: string, payload?: unknown): Promise<T> {
 
 const electronAPI: ElectronAPI = {
   auth: {
-    login: (payload) => invokeIpc(IPC_CHANNELS.AUTH_LOGIN, payload),
-    logout: () => invokeIpc(IPC_CHANNELS.AUTH_LOGOUT)
+    login: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGIN, payload),
+    logout: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGOUT)
   },
   fileSystem: {
-    readTextFile: (payload) => invokeIpc(IPC_CHANNELS.FILESYSTEM_READ_TEXT_FILE, payload),
-    writeTextFile: (payload) => invokeIpc(IPC_CHANNELS.FILESYSTEM_WRITE_TEXT_FILE, payload)
+    readTextFile: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE, payload),
+    writeTextFile: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.FILESYSTEM_WRITE_TEXT_FILE, payload)
   },
   app: {
-    getInfo: () => invokeIpc(IPC_CHANNELS.APP_GET_INFO)
+    getInfo: () => invokeIpc(IPC_CHANNELS_LEGACY.APP_GET_INFO)
   },
   window: {
-    minimize: () => invokeIpc(IPC_CHANNELS.WINDOW_MINIMIZE),
-    maximize: () => invokeIpc(IPC_CHANNELS.WINDOW_MAXIMIZE),
-    unmaximize: () => invokeIpc(IPC_CHANNELS.WINDOW_UNMAXIMIZE),
-    toggleMaximize: () => invokeIpc(IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE),
-    close: () => invokeIpc(IPC_CHANNELS.WINDOW_CLOSE),
-    getState: () => invokeIpc(IPC_CHANNELS.WINDOW_GET_STATE)
+    minimize: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_MINIMIZE),
+    maximize: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_MAXIMIZE),
+    unmaximize: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_UNMAXIMIZE),
+    toggleMaximize: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_TOGGLE_MAXIMIZE),
+    close: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_CLOSE),
+    getState: () => invokeIpc(IPC_CHANNELS_LEGACY.WINDOW_GET_STATE)
+  },
+  license: {
+    getFingerprint: () => invokeIpc(IPC_CHANNELS.license.GET_FINGERPRINT),
+    activate: (payload) => invokeIpc(IPC_CHANNELS.license.ACTIVATE, payload),
+    validate: (payload) => invokeIpc(IPC_CHANNELS.license.VALIDATE, payload),
+    getCurrent: () => invokeIpc(IPC_CHANNELS.license.GET_CURRENT),
+    deactivate: () => invokeIpc(IPC_CHANNELS.license.DEACTIVATE),
+    getState: () => invokeIpc(IPC_CHANNELS.license.GET_STATE),
+    isValid: () => invokeIpc(IPC_CHANNELS.license.IS_VALID),
   },
   events: {
     onWindowStateChanged: (handler: (state: WindowState) => void) => {
@@ -56,9 +65,9 @@ const electronAPI: ElectronAPI = {
         handler(state);
       };
 
-      ipcRenderer.on(IPC_CHANNELS.WINDOW_STATE_CHANGED, listener);
+      ipcRenderer.on(IPC_CHANNELS_LEGACY.WINDOW_STATE_CHANGED, listener);
       return () => {
-        ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_STATE_CHANGED, listener);
+        ipcRenderer.removeListener(IPC_CHANNELS_LEGACY.WINDOW_STATE_CHANGED, listener);
       };
     }
   }

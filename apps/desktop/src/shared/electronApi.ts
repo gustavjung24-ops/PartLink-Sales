@@ -13,6 +13,9 @@ export interface IpcResponse<T = unknown> {
   timestamp: number;
 }
 
+// Import license types from shared package
+import type { DeviceFingerprint, LicenseData, LicenseValidationResponse } from "@sparelink/shared";
+
 export interface AuthLoginPayload {
   username: string;
   password: string;
@@ -66,12 +69,54 @@ export interface ElectronAPI {
     close: () => Promise<void>;
     getState: () => Promise<WindowState>;
   };
+  license: {
+    getFingerprint: () => Promise<DeviceFingerprint>;
+    activate: (payload: { licenseKey: string }) => Promise<LicenseValidationResponse>;
+    validate: (payload: { licenseKey: string }) => Promise<LicenseValidationResponse>;
+    getCurrent: () => Promise<LicenseData | null>;
+    deactivate: () => Promise<void>;
+    getState: () => Promise<string>;
+    isValid: () => Promise<boolean>;
+  };
   events: {
     onWindowStateChanged: (handler: (state: WindowState) => void) => () => void;
   };
 }
 
 export const IPC_CHANNELS = {
+  auth: {
+    LOGIN: "auth:login",
+    LOGOUT: "auth:logout",
+  },
+  filesystem: {
+    READ_TEXT_FILE: "filesystem:read-text-file",
+    WRITE_TEXT_FILE: "filesystem:write-text-file",
+  },
+  app: {
+    GET_INFO: "app:get-info",
+  },
+  window: {
+    MINIMIZE: "window:minimize",
+    MAXIMIZE: "window:maximize",
+    UNMAXIMIZE: "window:unmaximize",
+    TOGGLE_MAXIMIZE: "window:toggle-maximize",
+    CLOSE: "window:close",
+    GET_STATE: "window:get-state",
+    STATE_CHANGED: "window:state-changed",
+  },
+  license: {
+    GET_FINGERPRINT: "license:get-fingerprint",
+    ACTIVATE: "license:activate",
+    VALIDATE: "license:validate",
+    GET_CURRENT: "license:get-current",
+    DEACTIVATE: "license:deactivate",
+    GET_STATE: "license:get-state",
+    IS_VALID: "license:is-valid",
+  },
+} as const;
+
+// Flattened for backwards compatibility
+export const IPC_CHANNELS_LEGACY = {
   AUTH_LOGIN: "auth:login",
   AUTH_LOGOUT: "auth:logout",
   FILESYSTEM_READ_TEXT_FILE: "filesystem:read-text-file",
@@ -83,5 +128,5 @@ export const IPC_CHANNELS = {
   WINDOW_TOGGLE_MAXIMIZE: "window:toggle-maximize",
   WINDOW_CLOSE: "window:close",
   WINDOW_GET_STATE: "window:get-state",
-  WINDOW_STATE_CHANGED: "window:state-changed"
+  WINDOW_STATE_CHANGED: "window:state-changed",
 } as const;

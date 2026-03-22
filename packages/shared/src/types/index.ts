@@ -96,3 +96,8 @@ export interface MachineContext {
   appVersion: string;
   lastSyncTime: string;
 }
+
+/**
+ * License System Types
+ */
+export * from "./license";
