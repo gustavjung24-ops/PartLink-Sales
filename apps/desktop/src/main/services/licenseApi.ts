@@ -29,10 +29,15 @@ export class LicenseApiService {
   private lastValidation: CachedValidation | null = null;
   private clockSkewThresholdMs = 5 * 60 * 1000; // 5 minutes
   private clockRollbackToleranceMs = 2 * 60 * 1000; // 2 minutes
+  private nonceRequiredAfterMs = Date.UTC(2026, 2, 24, 0, 0, 0); // 2026-03-24T00:00:00Z
   private lastServerNonce: string | null = null;
 
   constructor(apiBaseUrl: string = "http://localhost:3000") {
     this.apiBaseUrl = apiBaseUrl;
+  }
+
+  restoreNonce(nonce: string | null | undefined): void {
+    this.lastServerNonce = nonce ?? null;
   }
 
   /**
@@ -49,6 +54,7 @@ export class LicenseApiService {
     const payload: LicenseActivationPayload = {
       key: licenseKey,
       deviceFingerprint: fingerprint,
+      clientTime: Date.now(),
     };
 
     try {
@@ -79,6 +85,7 @@ export class LicenseApiService {
       };
 
       this.lastServerNonce = data.nonce;
+      data.licenseData.nonce = data.nonce;
 
       console.log(
         `[License API] Activation successful: ${data.licenseData.productName} (expires: ${new Date(data.licenseData.expiresAt).toISOString()})`
@@ -157,6 +164,7 @@ export class LicenseApiService {
       };
 
       this.lastServerNonce = data.nonce;
+      data.licenseData.nonce = data.nonce;
 
       console.log(`[License API] Validation successful: ${data.status}`);
 
@@ -191,8 +199,13 @@ export class LicenseApiService {
     const nonceIssuedAt = validation.nonceIssuedAt ?? validation.licenseData.nonceIssuedAt;
 
     if (!nonceIssuedAt) {
-      // Backward compatibility with old tokens: allow but log for visibility.
-      console.warn("[License API] nonceIssuedAt missing in cached token; skipping rollback guard.");
+      // Backward compatibility sunset: old tokens are accepted for a short migration window.
+      if (Date.now() >= this.nonceRequiredAfterMs) {
+        console.error("[License API] nonceIssuedAt missing after migration cutoff; rejecting cached token.");
+        return false;
+      }
+
+      console.warn("[License API] nonceIssuedAt missing in cached token; temporary compatibility mode active.");
       return true;
     }
 

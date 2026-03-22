@@ -12,7 +12,9 @@
 
 import crypto from "crypto";
 import os from "os";
-import { app } from "electron";
+import { app, safeStorage } from "electron";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { DeviceFingerprint } from "@sparelink/shared";
 
 /**
@@ -36,7 +38,38 @@ function hashHostname(hostname: string): string {
 
 export class DeviceFingerprintService {
   private fingerprint: DeviceFingerprint | null = null;
-  private readonly cacheKey = "device-fingerprint";
+  private readonly fingerprintFilePath = path.join(app.getPath("userData"), "license", "fingerprint.dat");
+
+  private serializeMachineId(machineId: string): Buffer {
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.encryptString(machineId);
+    }
+
+    console.warn("[Fingerprint Service] safeStorage unavailable — machineId stored in plaintext");
+    return Buffer.from(machineId, "utf-8");
+  }
+
+  private deserializeMachineId(content: Buffer): string {
+    return safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(content)
+      : content.toString("utf-8");
+  }
+
+  private async loadPersistedMachineId(): Promise<string | null> {
+    try {
+      const content = await readFile(this.fingerprintFilePath);
+      const machineId = this.deserializeMachineId(content).trim();
+      return machineId.length > 0 ? machineId : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async persistMachineId(machineId: string): Promise<void> {
+    const dirPath = path.dirname(this.fingerprintFilePath);
+    await mkdir(dirPath, { recursive: true });
+    await writeFile(this.fingerprintFilePath, this.serializeMachineId(machineId));
+  }
 
   /**
    * Get or generate device fingerprint
@@ -48,8 +81,13 @@ export class DeviceFingerprintService {
       return this.fingerprint;
     }
 
-    // Generate new fingerprint
-    const machineId = os.hostname() + crypto.randomBytes(8).toString("hex");
+    // Load persisted machineId first to keep activation stable across restarts.
+    // Only generate a new one the very first time.
+    let machineId = await this.loadPersistedMachineId();
+    if (!machineId) {
+      machineId = `${os.hostname()}-${crypto.randomBytes(8).toString("hex")}`;
+      await this.persistMachineId(machineId);
+    }
     const osType = process.platform;
     const osRelease = os.release();
     const osArchitecture = os.arch();

@@ -10,6 +10,7 @@ import { withErrorHandling } from "./utils";
 import { deviceFingerprintService } from "../services/fingerprint";
 import { licenseStateManager } from "../services/license";
 import { licenseApiService } from "../services/licenseApi";
+import { secureLicenseStore } from "../services/secureLicenseStore";
 import type {
   DeviceFingerprint,
   DeviceRebindingStatus,
@@ -54,9 +55,11 @@ export function registerLicenseHandlers(): void {
 
       const fingerprint = await deviceFingerprintService.getFingerprint();
       const response = await licenseApiService.activateLicense(payload.licenseKey, fingerprint);
+      response.licenseData.nonce = response.nonce;
 
       // Update local state
       licenseStateManager.setLicense(response.licenseData, true);
+      await secureLicenseStore.saveLicenseData(response.licenseData);
 
       return response;
     }
@@ -75,9 +78,11 @@ export function registerLicenseHandlers(): void {
 
       const fingerprint = await deviceFingerprintService.getFingerprint();
       const response = await licenseApiService.validateLicense(payload.licenseKey, fingerprint);
+      response.licenseData.nonce = response.nonce;
 
       // Update local state
       licenseStateManager.setLicense(response.licenseData);
+      await secureLicenseStore.saveLicenseData(response.licenseData);
 
       return response;
     }
@@ -110,6 +115,11 @@ export function registerLicenseHandlers(): void {
 
       // Update local state
       licenseStateManager.deactivateLicense();
+
+      const updatedLicense = licenseStateManager.getCurrentLicense();
+      if (updatedLicense) {
+        await secureLicenseStore.saveLicenseData(updatedLicense);
+      }
     }
   );
 

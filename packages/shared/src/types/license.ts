@@ -47,6 +47,7 @@ export interface LicenseData {
   lastResetDate?: number;             // Last reset timestamp
   lastValidatedAt?: number;           // Last successful server validation (server time)
   nonceIssuedAt?: number;             // Server time when nonce/challenge was issued
+  nonce?: string;                     // Last server nonce/challenge persisted for next validation
 }
 
 /**
@@ -69,6 +70,7 @@ export interface LicenseValidationResponse {
 export interface LicenseActivationPayload {
   key: string;
   deviceFingerprint: DeviceFingerprint;
+  clientTime?: number;               // Optional client clock for early skew detection at activation time
 }
 
 /**

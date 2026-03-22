@@ -254,7 +254,10 @@ export class LicenseStateManager {
   /**
    * Start periodic validation timer
    */
-  startValidationTimer(intervalMs: number = 6 * 60 * 60 * 1000): void {
+  startValidationTimer(
+    intervalMs: number = 6 * 60 * 60 * 1000,
+    runServerValidation?: () => Promise<void>
+  ): void {
     // 6 hours default
     if (this.validationTimer) {
       clearInterval(this.validationTimer);
@@ -263,7 +266,12 @@ export class LicenseStateManager {
     this.validationTimer = setInterval(() => {
       this.updateStateBasedOnExpiry();
       console.log(`[License Manager] Periodic validation check: ${this.getCurrentState()}`);
-      // TODO: Trigger server validation here
+
+      if (runServerValidation) {
+        void runServerValidation().catch((error) => {
+          console.warn("[License Manager] Periodic server validation failed:", error);
+        });
+      }
     }, intervalMs);
 
     console.log(`[License Manager] Validation timer started (interval: ${intervalMs}ms)`);

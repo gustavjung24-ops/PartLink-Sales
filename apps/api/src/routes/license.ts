@@ -29,6 +29,7 @@ function createNonce(): string {
 }
 
 const CLOCK_TOLERANCE_MS = 2 * 60 * 1000;
+const ACTIVATION_CLOCK_SKEW_MS = 10 * 60 * 1000;
 
 function mapLicenseState(status: string, isTrial: boolean): LicenseState {
   if (isTrial && status !== "REVOKED") {
@@ -55,21 +56,23 @@ async function buildValidationResponse(key: string, machineId: string, message?:
     return null;
   }
 
-  const activation = license.activations.find((item) => item.machineId === machineId) ?? license.activations[0] ?? null;
+  const activation = license.activations.find((item) => item.machineId === machineId);
+  if (!activation) {
+    return null;
+  }
+
   const expiresAt = license.expiryDate ?? license.trialEndDate ?? activation?.expiresAt ?? license.createdAt;
   const nonce = createNonce();
   const nonceIssuedAt = new Date();
 
-  if (activation) {
-    await prisma.activation.update({
-      where: { id: activation.id },
-      data: {
-        serverNonce: nonce,
-        nonceIssuedAt,
-        lastValidatedAt: nonceIssuedAt,
-      } as any,
-    });
-  }
+  await prisma.activation.update({
+    where: { id: activation.id },
+    data: {
+      serverNonce: nonce,
+      nonceIssuedAt,
+      lastValidatedAt: nonceIssuedAt,
+    },
+  });
 
   return {
     success: true,
@@ -88,6 +91,7 @@ async function buildValidationResponse(key: string, machineId: string, message?:
       lastResetDate: activation?.rebindLastAt?.getTime(),
       lastValidatedAt: nonceIssuedAt.getTime(),
       nonceIssuedAt: nonceIssuedAt.getTime(),
+      nonce,
     },
     serverTime: Date.now(),
     nonce,
@@ -103,6 +107,15 @@ export async function registerLicenseRoutes(fastify: FastifyInstance): Promise<v
       return reply.code(400).send(apiError(ApiErrorCode.MISSING_REQUIRED_FIELD, validation));
     }
 
+    if (
+      typeof request.body.clientTime === "number" &&
+      Math.abs(Date.now() - request.body.clientTime) > ACTIVATION_CLOCK_SKEW_MS
+    ) {
+      return reply
+        .code(400)
+        .send(apiError(ApiErrorCode.INVALID_PAYLOAD, "Client clock skew too large. Please correct system time and retry."));
+    }
+
     const result = await licenseService.activateLicense(
       request.body.key,
       request.body.deviceFingerprint.machineId,
@@ -114,6 +127,9 @@ export async function registerLicenseRoutes(fastify: FastifyInstance): Promise<v
     }
 
     const response = await buildValidationResponse(request.body.key, request.body.deviceFingerprint.machineId, "License activated");
+    if (!response) {
+      return reply.code(401).send(apiError(ApiErrorCode.UNAUTHORIZED, "Device not activated for this license"));
+    }
     return reply.code(200).send(apiSuccess(response));
   });
 
@@ -159,6 +175,9 @@ export async function registerLicenseRoutes(fastify: FastifyInstance): Promise<v
     }
 
     const response = await buildValidationResponse(request.body.key, request.body.deviceFingerprint.machineId, "License valid");
+    if (!response) {
+      return reply.code(401).send(apiError(ApiErrorCode.UNAUTHORIZED, "Device not activated for this license"));
+    }
     return reply.code(200).send(apiSuccess(response));
   });
 

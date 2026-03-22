@@ -4,6 +4,9 @@ import path from "node:path";
 import { IPC_CHANNELS } from "@/shared/electronApi";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc/handlers";
 import { licenseStateManager } from "./services/license";
+import { licenseApiService } from "./services/licenseApi";
+import { secureLicenseStore } from "./services/secureLicenseStore";
+import { deviceFingerprintService } from "./services/fingerprint";
 import { appUpdater } from "./services/updater";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -80,11 +83,26 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    await licenseStateManager.initialize(null);
+    const storedLicense = await secureLicenseStore.loadLicenseData();
+    await licenseStateManager.initialize(storedLicense);
+    licenseApiService.restoreNonce(storedLicense?.nonce ?? null);
+
     registerIpcHandlers(process.env.DEBUG_IPC === "true");
     mainWindow = createMainWindow();
     appUpdater.initialize(mainWindow);
-    licenseStateManager.startValidationTimer();
+    licenseStateManager.startValidationTimer(6 * 60 * 60 * 1000, async () => {
+      const current = licenseStateManager.getCurrentLicense();
+      if (!current?.key) {
+        return;
+      }
+
+      const fingerprint = await deviceFingerprintService.getFingerprint();
+      const response = await licenseApiService.validateLicense(current.key, fingerprint);
+      response.licenseData.nonce = response.nonce;
+
+      licenseStateManager.setLicense(response.licenseData);
+      await secureLicenseStore.saveLicenseData(response.licenseData);
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
