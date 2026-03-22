@@ -1,0 +1,744 @@
+name: Bootstrap GitHub Issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      milestone:
+        description: 'Milestone để gán issues (để trống nếu chưa có)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run - chỉ in ra mà không tạo issues'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  setup-labels:
+    name: Tạo Labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tạo labels dự án
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          create_label() {
+            local name="$1" color="$2" description="$3"
+            gh label create "$name" --color "$color" --description "$description" --repo "$REPO" 2>/dev/null || \
+            gh label edit "$name" --color "$color" --description "$description" --repo "$REPO" 2>/dev/null || true
+          }
+
+          # Priority labels
+          create_label "P0-critical"    "B60205" "Blocking MVP - phải xong ngay"
+          create_label "P1-high"        "D93F0B" "MVP Required - sprint hiện tại"
+          create_label "P2-medium"      "E4E669" "Post-MVP - sprint tiếp theo"
+          create_label "P3-low"         "0E8A16" "Future consideration"
+
+          # Type labels
+          create_label "bug"            "D73A4A" "Lỗi cần sửa"
+          create_label "enhancement"    "A2EEEF" "Tính năng mới hoặc cải tiến"
+          create_label "decision"       "7057FF" "Quyết định kiến trúc/kỹ thuật"
+          create_label "needs-triage"   "E99695" "Chưa được phân loại"
+          create_label "needs-review"   "FBCA04" "Đang chờ review"
+          create_label "blocked"        "B60205" "Bị chặn bởi dependency"
+          create_label "good first issue" "7057FF" "Phù hợp cho contributor mới"
+
+          # Component labels
+          create_label "comp:api"       "0052CC" "Backend API (Fastify/Node.js)"
+          create_label "comp:desktop"   "0075CA" "Desktop App (Electron/React)"
+          create_label "comp:database"  "E4E669" "Database (PostgreSQL/Prisma)"
+          create_label "comp:license"   "D93F0B" "License Management System"
+          create_label "comp:sync"      "0E8A16" "Offline Sync Engine"
+          create_label "comp:import"    "FBCA04" "Import & Approval Workflow"
+          create_label "comp:infra"     "C5DEF5" "Infrastructure & DevOps"
+          create_label "comp:pdf"       "BFD4F2" "PDF Export"
+          create_label "comp:auth"      "F9D0C4" "Authentication & RBAC"
+
+          # Sprint labels
+          create_label "sprint:1"       "1D76DB" "Sprint 1"
+          create_label "sprint:2"       "1D76DB" "Sprint 2"
+          create_label "sprint:3"       "1D76DB" "Sprint 3"
+
+          echo "✅ Tạo labels hoàn tất"
+
+  create-milestone:
+    name: Tạo Milestones
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    outputs:
+      sprint1_id: ${{ steps.milestones.outputs.sprint1_id }}
+      sprint2_id: ${{ steps.milestones.outputs.sprint2_id }}
+      mvp_id: ${{ steps.milestones.outputs.mvp_id }}
+    steps:
+      - name: Tạo milestones
+        id: milestones
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          create_milestone() {
+            local title="$1" due="$2" desc="$3"
+            gh api repos/$REPO/milestones \
+              --method POST \
+              -f title="$title" \
+              -f due_on="${due}T00:00:00Z" \
+              -f description="$desc" \
+              --jq '.number' 2>/dev/null || \
+            gh api repos/$REPO/milestones \
+              --jq ".[] | select(.title == \"$title\") | .number" 2>/dev/null || echo ""
+          }
+
+          S1=$(create_milestone "Sprint 1 – Core Foundation" "2026-04-10" "Authentication, License System, Product Catalog, Basic Sync")
+          S2=$(create_milestone "Sprint 2 – Sales Features" "2026-05-01" "Quotes, Approvals, Import Workflow, PDF Export")
+          MVP=$(create_milestone "MVP Release v1.0" "2026-05-31" "Full offline-first MVP ready for production")
+
+          echo "sprint1_id=$S1" >> $GITHUB_OUTPUT
+          echo "sprint2_id=$S2" >> $GITHUB_OUTPUT
+          echo "mvp_id=$MVP" >> $GITHUB_OUTPUT
+
+          echo "✅ Milestones: Sprint1=$S1, Sprint2=$S2, MVP=$MVP"
+
+  seed-decisions:
+    name: Seed Decision Issues
+    runs-on: ubuntu-latest
+    needs: [setup-labels, create-milestone]
+    steps:
+      - name: Tạo issues quyết định Sprint 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          create_issue() {
+            local title="$1" body="$2" labels="$3" milestone="$4"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would create: $title"
+              return
+            fi
+            local args=(--title "$title" --body "$2" --label "$labels" --repo "$REPO")
+            [ -n "$milestone" ] && args+=(--milestone "$milestone")
+            gh issue create "${args[@]}" && echo "✅ Created: $title" || echo "⚠️ Skip (may exist): $title"
+          }
+
+          create_issue \
+            "[DECISION] Q1 – Cách xác định sản phẩm 'Company Can Order'" \
+            "## Bối cảnh
+          Cần xác định cơ chế nào được dùng để đánh dấu sản phẩm là khả dụng để đặt hàng.
+
+          ## Các lựa chọn
+
+          ### A – Auto-detect từ ERP (phức tạp)
+          - Tích hợp ERP webhook để đồng bộ trạng thái tồn kho
+          - **Ưu:** Real-time, chính xác
+          - **Nhược:** Phụ thuộc ERP integration trong MVP
+
+          ### B – Admin cấu hình thủ công (đơn giản)
+          - Admin tích vào checkbox \`is_orderable\` trong quản lý sản phẩm
+          - **Ưu:** MVP-ready ngay, không cần ERP
+          - **Nhược:** Dữ liệu có thể lỗi thời
+
+          ## Tác động kỹ thuật
+          - Schema: \`product_availability.availability_type\` enum (\`auto_erp\` | \`manual\`)
+          - Nếu chọn A: cần thêm module ERP + webhook receiver
+          - Nếu chọn B: chỉ cần admin UI toggle
+
+          ## Deadline quyết định
+          **2026-03-23 EOD**
+
+          ## Trạng thái
+          - [x] Đề xuất
+          - [ ] Đang xem xét
+          - [ ] Đã chấp thuận" \
+            "decision,P0-critical,needs-review,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "[DECISION] Q2 – Chiến lược đồng bộ tồn kho & giá" \
+            "## Bối cảnh
+          Cần quyết định cách giữ dữ liệu tồn kho và giá bán luôn được cập nhật.
+
+          ## Các lựa chọn
+
+          ### A – Real-time ERP Webhook (phức tạp nhất)
+          - ERP đẩy sự kiện khi tồn kho/giá thay đổi
+          - **Ưu:** Chính xác nhất
+          - **Nhược:** Cần ERP integration trong MVP; tăng complexity
+
+          ### B – CSV Import hàng ngày (trung bình)
+          - Admin upload file CSV mỗi ngày
+          - **Ưu:** Đơn giản hơn A, không cần ERP trực tiếp
+          - **Nhược:** Dữ liệu có delay tối đa 24h
+
+          ### C – Nhập liệu thủ công (đơn giản nhất)
+          - Nhân viên nhập giá/tồn kho trực tiếp trên app
+          - **Ưu:** MVP-ready ngay
+          - **Nhược:** Error-prone, không scalable
+
+          ## Tác động kỹ thuật
+          - Chọn A: cần module ERP + webhook endpoint + queue
+          - Chọn B: cần file upload UI + import parser + validation
+          - Chọn C: chỉ cần admin CRUD form
+
+          ## Deadline
+          **2026-03-23 EOD**" \
+            "decision,P0-critical,needs-review,sprint:1,comp:sync" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "[DECISION] Q3 – Danh sách 12 ngành công nghiệp & thuộc tính bắt buộc" \
+            "## Bối cảnh
+          Hệ thống hỗ trợ 12 ngành công nghiệp. Cần danh sách chính xác và các trường thuộc tính bắt buộc theo từng ngành để seed DB.
+
+          ## Yêu cầu
+          Cung cấp cho mỗi ngành:
+          - Tên ngành (tiếng Anh/tiếng Việt)
+          - Mã ngành (slug)
+          - Các thuộc tính bắt buộc (ví dụ: \`material\`, \`diameter_mm\`, \`pressure_rating\`)
+          - Đơn vị đo lường mặc định
+
+          ## Danh sách dự kiến (cần xác nhận)
+          1. Bearing & Power Transmission
+          2. Hydraulics & Pneumatics
+          3. Electrical & Automation
+          4. Sealing & Gaskets
+          5. Fasteners & Hardware
+          6. Filtration Systems
+          7. Conveying & Material Handling
+          8. Pumps & Valves
+          9. Cutting Tools & Abrasives
+          10. Instrumentation & Measurement
+          11. Safety Equipment
+          12. (TBD)
+
+          ## Tác động kỹ thuật
+          - Seed \`industries\` table (12 records)
+          - Seed \`industry_attribute_defs\` table (N records per industry)
+          - Ảnh hưởng đến product search UI và import validation
+
+          ## Deadline
+          **2026-03-23 EOD**" \
+            "decision,P0-critical,needs-review,sprint:1,comp:database" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "[DECISION] Q4 – Số lượng Quote Templates & phương thức xuất PDF" \
+            "## Bối cảnh
+          Cần xác định số mẫu báo giá, mức độ tùy chỉnh, và thư viện PDF.
+
+          ## Câu hỏi cần trả lời
+          1. Có bao nhiêu loại template báo giá?
+          2. Khách hàng có thể tùy chỉnh logo/màu sắc không?
+          3. Xuất PDF bằng PDFKit hay Puppeteer (HTML-to-PDF)?
+
+          ## So sánh PDF Libraries
+          | | PDFKit | Puppeteer |
+          |---|---|---|
+          | **Bundle size** | ~2MB | ~150MB |
+          | **Format linh hoạt** | Trung bình | Cao (HTML/CSS) |
+          | **Offline support** | ✅ | ✅ (với Electron) |
+          | **Complexity** | Thấp | Cao |
+
+          ## Tác động kỹ thuật
+          - Schema: \`quote_templates\` table
+          - PDF pipeline trong Electron main process
+          - Nếu Puppeteer: tăng app size ~150MB
+
+          ## Deadline
+          **2026-03-23 EOD**" \
+            "decision,P1-high,needs-review,sprint:1,comp:pdf" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "[DECISION] Q5 – Thời gian offline grace period & hiển thị giá cũ" \
+            "## Bối cảnh
+          Xác định chính sách offline cho salesperson.
+
+          ## Câu hỏi
+          1. Grace period là bao lâu? (24h / 48h / 72h)
+          2. Khi offline, có cho phép xem giá không?
+          3. Có cảnh báo khi giá có thể lỗi thời không?
+
+          ## Tác động kỹ thuật
+          - Config: \`license_policy.offline_grace_hours\` (24 | 48 | 72)
+          - Config: \`license_policy.show_stale_pricing\` (boolean)
+          - UX: countdown timer trong app khi offline
+          - SQLite cache TTL cho pricing data
+          - License validation logic khi re-connect
+
+          ## Ảnh hưởng UX
+          - Nếu grace period ngắn (24h): salesperson cần kết nối thường xuyên
+          - Nếu cho xem giá cũ: cần hiện banner warning rõ ràng
+
+          ## Deadline
+          **2026-03-23 EOD**" \
+            "decision,P1-high,needs-review,sprint:1,comp:license,comp:sync" \
+            "Sprint 1 – Core Foundation"
+
+          echo "✅ Decision issues hoàn tất"
+
+  seed-backend:
+    name: Seed Backend Issues
+    runs-on: ubuntu-latest
+    needs: [setup-labels, create-milestone]
+    steps:
+      - name: Tạo backend issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          create_issue() {
+            local title="$1" body="$2" labels="$3" milestone="$4"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would create: $title"
+              return
+            fi
+            local args=(--title "$title" --body "$body" --label "$labels" --repo "$REPO")
+            [ -n "$milestone" ] && args+=(--milestone "$milestone")
+            gh issue create "${args[@]}" && echo "✅ Created: $title" || echo "⚠️ Skip: $title"
+          }
+
+          create_issue \
+            "Implement JWT authentication middleware & refresh token rotation" \
+            "## Mô tả
+          Triển khai authentication middleware cho Fastify với JWT access token + refresh token rotation.
+
+          ## Tasks
+          - [ ] \`POST /auth/login\` – validate credentials, issue JWT pair
+          - [ ] \`POST /auth/refresh\` – validate refresh token, issue new access token
+          - [ ] \`POST /auth/logout\` – revoke refresh token
+          - [ ] JWT middleware verify access token trên protected routes
+          - [ ] Refresh token lưu trong DB với expiry
+          - [ ] Access token: 15 phút; Refresh token: 7 ngày
+
+          ## Acceptance Criteria
+          - [ ] Login trả về \`{ accessToken, refreshToken, expiresIn }\`
+          - [ ] Expired access token → 401 với message rõ ràng
+          - [ ] Refresh token rotation: token cũ bị revoke sau khi dùng
+          - [ ] Unit tests cho auth flow" \
+            "enhancement,P0-critical,comp:auth,comp:api,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Implement RBAC middleware (role-based access control)" \
+            "## Mô tả
+          Hoàn thiện middleware RBAC theo file \`apps/api/src/middleware/rbac.ts\`.
+
+          ## Roles
+          - \`admin\` – full access
+          - \`manager\` – approve quotes, manage products/users
+          - \`salesperson\` – create quotes, search products (read-only catalog)
+          - \`viewer\` – read-only
+
+          ## Tasks
+          - [ ] Decorator/hook \`requireRole(roles: Role[])\` cho Fastify routes
+          - [ ] Test các route với từng role
+          - [ ] Return 403 Forbidden với message rõ khi thiếu quyền
+          - [ ] Integration tests
+
+          ## Files liên quan
+          - \`apps/api/src/middleware/rbac.ts\`
+          - \`apps/api/src/routes/\`" \
+            "enhancement,P0-critical,comp:auth,comp:api,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Implement License activation & device binding endpoints" \
+            "## Mô tả
+          Hoàn thiện license system: activation, validation, device fingerprinting.
+
+          ## Tasks
+          - [ ] \`POST /licenses/activate\` – bind license key đến device fingerprint
+          - [ ] \`GET /licenses/validate\` – kiểm tra license còn hợp lệ không
+          - [ ] \`POST /licenses/rebind\` – rebind sang device mới (giới hạn N lần)
+          - [ ] \`POST /licenses/deactivate\` – deactivate device
+          - [ ] Nonce + timestamp để chống replay attacks
+          - [ ] Clock skew guard (±5 phút)
+          - [ ] Ghi log mọi activation event
+
+          ## License key format
+          \`SL-YYYY-XXXX-XXXX-XXXX\`
+
+          ## Files liên quan
+          - \`apps/api/src/modules/licenses/\`
+          - \`apps/api/prisma/003_add_license_nonce_clock_skew_guard.sql\`" \
+            "enhancement,P0-critical,comp:license,comp:api,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Implement Product catalog API (CRUD + search)" \
+            "## Mô tả
+          Triển khai Product catalog endpoints với search và industry filtering.
+
+          ## Endpoints
+          - [ ] \`GET /parts\` – list parts (pagination, filter by industry, search)
+          - [ ] \`GET /parts/:id\` – chi tiết sản phẩm + attributes
+          - [ ] \`POST /parts\` – tạo mới (admin/manager)
+          - [ ] \`PUT /parts/:id\` – cập nhật
+          - [ ] \`DELETE /parts/:id\` – soft delete
+
+          ## Search features
+          - [ ] Full-text search trên part code, description
+          - [ ] Filter by industry, brand, availability
+          - [ ] Confidence score cho AI part matching
+          - [ ] GIN index trên search fields
+
+          ## Files liên quan
+          - \`apps/api/src/routes/parts.ts\`
+          - \`apps/api/src/modules/\`" \
+            "enhancement,P1-high,comp:api,comp:database,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Database seeding script (industries, demo products, admin user)" \
+            "## Mô tả
+          Tạo script seed dữ liệu ban đầu cho development và demo.
+
+          ## Data cần seed
+          - [ ] 12 industries + attribute definitions (sau khi Q3 được quyết định)
+          - [ ] 1 admin user (admin@partlink.dev / changeme)
+          - [ ] 1 manager user, 2 salesperson users
+          - [ ] 50+ demo parts trải đều các ngành
+          - [ ] 3 license keys (1 active, 1 expired, 1 unused)
+          - [ ] 2 quote templates
+
+          ## Technical
+          - Chạy qua \`prisma db seed\` hoặc script riêng
+          - Idempotent (có thể chạy nhiều lần an toàn)
+          - Tách môi trường dev vs test
+
+          ## Files liên quan
+          - \`apps/api/prisma/schema.prisma\`" \
+            "enhancement,P1-high,comp:database,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Implement Sync endpoint (offline delta sync protocol)" \
+            "## Mô tả
+          Triển khai sync engine cho offline-first architecture.
+
+          ## Endpoints
+          - [ ] \`POST /sync/pull\` – client gửi lastSyncAt, server trả delta changes
+          - [ ] \`POST /sync/push\` – client đẩy local changes lên server
+          - [ ] Conflict resolution: server-wins strategy (Phase 1)
+          - [ ] Sync cursor/checkpoint để resumable sync
+
+          ## Edge cases
+          - [ ] Xử lý concurrent pushes từ cùng device
+          - [ ] Xử lý khi license hết grace period
+          - [ ] Batch size limits (max 500 records/request)
+
+          ## Files liên quan
+          - \`apps/api/src/routes/sync.ts\`" \
+            "enhancement,P1-high,comp:sync,comp:api,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Add Zod validation schemas cho tất cả API request/response" \
+            "## Mô tả
+          Thêm input validation bằng Zod (hoặc Fastify schema) cho mọi endpoint.
+
+          ## Tasks
+          - [ ] Auth routes schemas
+          - [ ] License routes schemas
+          - [ ] Parts routes schemas  
+          - [ ] Sync routes schemas
+          - [ ] Shared response envelope schema \`{ success, data, error, meta }\`
+          - [ ] Validate query params, path params, request body
+
+          ## Security
+          - Reject unknown fields (strip extra props)
+          - Validate types, ranges, string length limits
+          - SQL injection prevention via parameterized queries (Prisma đã handle)" \
+            "enhancement,P1-high,comp:api,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          echo "✅ Backend issues hoàn tất"
+
+  seed-desktop:
+    name: Seed Desktop App Issues
+    runs-on: ubuntu-latest
+    needs: [setup-labels, create-milestone]
+    steps:
+      - name: Tạo desktop app issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          create_issue() {
+            local title="$1" body="$2" labels="$3" milestone="$4"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would create: $title"
+              return
+            fi
+            local args=(--title "$title" --body "$body" --label "$labels" --repo "$REPO")
+            [ -n "$milestone" ] && args+=(--milestone "$milestone")
+            gh issue create "${args[@]}" && echo "✅ Created: $title" || echo "⚠️ Skip: $title"
+          }
+
+          create_issue \
+            "Desktop: License activation screen (first-run onboarding)" \
+            "## Mô tả
+          Màn hình nhập license key và kích hoạt thiết bị lần đầu.
+
+          ## UI Components
+          - [ ] Input field cho license key (\`SL-YYYY-XXXX-XXXX-XXXX\`) với format mask
+          - [ ] Nút \`Activate\` + loading state
+          - [ ] Error messages cho: invalid key, expired, device limit reached
+          - [ ] Success screen với thông tin license (ngày hết hạn, device count)
+          - [ ] Offline mode: nếu không có mạng khi activate → error rõ ràng
+
+          ## Acceptance Criteria
+          - [ ] Validate format key trước khi call API
+          - [ ] Lưu device fingerprint và license info vào secure storage
+          - [ ] Navigate sang main app sau activate thành công
+          - [ ] Hiển thị countdown đến ngày hết hạn license" \
+            "enhancement,P0-critical,comp:desktop,comp:license,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Desktop: Offline sync engine với SQLite cache" \
+            "## Mô tả
+          Triển khai offline-first data layer trong Electron main process.
+
+          ## Tasks
+          - [ ] Setup better-sqlite3 trong Electron main
+          - [ ] Schema SQLite mirror cho: products, quotes, sync_queue
+          - [ ] Sync queue: buffer local changes khi offline
+          - [ ] Background sync job khi reconnect
+          - [ ] Conflict resolution display (show merge conflicts to user)
+          - [ ] Grace period countdown timer (hiện trong status bar)
+
+          ## Architecture
+          - Main process: SQLite operations
+          - Renderer: query qua preload IPC
+          - Sync worker: interval check + push/pull
+
+          ## Files liên quan
+          - \`apps/desktop/src/main/\`
+          - \`apps/desktop/src/preload/\`" \
+            "enhancement,P0-critical,comp:desktop,comp:sync,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Desktop: Product search UI với AI confidence display" \
+            "## Mô tả
+          Giao diện tìm kiếm sản phẩm với AI-powered part code parsing.
+
+          ## UI Features
+          - [ ] Search bar với debounce (300ms)
+          - [ ] Autocomplete suggestions từ cache (offline) và API (online)
+          - [ ] Badge hiển thị confidence score (🟢 >90% | 🟡 60-90% | 🔴 <60%)
+          - [ ] Filter panel: industry, brand, availability, price range
+          - [ ] Product card: mã, tên, ngành, giá, tồn kho, confidence
+          - [ ] \"Stale data\" banner khi data >24h chưa sync
+
+          ## Performance
+          - Debounce search input
+          - Virtual scroll cho danh sách dài
+          - Skeleton loading states" \
+            "enhancement,P1-high,comp:desktop,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          create_issue \
+            "Desktop: Quote creation flow với multi-template" \
+            "## Mô tả
+          Luồng tạo báo giá cho salesperson.
+
+          ## Steps
+          1. Chọn template (sau khi Q4 được quyết định)
+          2. Thêm thông tin khách hàng
+          3. Thêm sản phẩm (từ search hoặc manual)
+          4. Xem preview báo giá
+          5. Xuất PDF / Gửi email
+
+          ## UI Components
+          - [ ] Template selector carousel
+          - [ ] Customer info form (tên, công ty, địa chỉ, điện thoại)
+          - [ ] Line items table (thêm/xóa/sửa sản phẩm, số lượng, giá)
+          - [ ] Summary: subtotal, tax, discount, total
+          - [ ] PDF preview panel
+          - [ ] Export & share actions
+
+          ## Offline support
+          - [ ] Tạo quote offline → lưu local → sync khi online" \
+            "enhancement,P1-high,comp:desktop,comp:pdf,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          create_issue \
+            "Desktop: Bulk import UI với conflict resolution" \
+            "## Mô tả
+          Giao diện upload và xử lý import dữ liệu hàng loạt.
+
+          ## UI Flow
+          1. Upload CSV/Excel file
+          2. Preview parsed data + validation errors
+          3. Submit để tạo approval request
+          4. Hiển thị conflict cases (nếu có)
+          5. Admin approve/reject từng conflict
+
+          ## Components
+          - [ ] File dropzone (CSV/Excel)
+          - [ ] Data preview table với row validation
+          - [ ] Error summary (số lượng errors, loại lỗi)
+          - [ ] Conflict resolution dialog (server value vs import value)
+          - [ ] Progress bar cho import lớn
+
+          ## Files liên quan
+          - \`apps/api/src/modules/imports/\`
+          - \`apps/api/src/modules/approvals/\`" \
+            "enhancement,P1-high,comp:desktop,comp:import,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          echo "✅ Desktop issues hoàn tất"
+
+  seed-infra-testing:
+    name: Seed Infra & Testing Issues
+    runs-on: ubuntu-latest
+    needs: [setup-labels, create-milestone]
+    steps:
+      - name: Tạo infra và testing issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          create_issue() {
+            local title="$1" body="$2" labels="$3" milestone="$4"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY RUN] Would create: $title"
+              return
+            fi
+            local args=(--title "$title" --body "$body" --label "$labels" --repo "$REPO")
+            [ -n "$milestone" ] && args+=(--milestone "$milestone")
+            gh issue create "${args[@]}" && echo "✅ Created: $title" || echo "⚠️ Skip: $title"
+          }
+
+          create_issue \
+            "Setup CI/CD pipeline: lint, typecheck, test on PR" \
+            "## Mô tả
+          Cấu hình GitHub Actions để chạy tự động khi tạo PR.
+
+          ## Jobs
+          - [ ] \`lint\`: ESLint + Prettier check
+          - [ ] \`typecheck\`: \`tsc --noEmit\` cho tất cả packages
+          - [ ] \`test:api\`: Unit + integration tests cho API
+          - [ ] \`test:shared\`: Tests cho packages/shared
+          - [ ] \`build\`: Verify build thành công
+
+          ## Triggers
+          - \`push\` vào \`main\`, \`develop\`
+          - \`pull_request\` vào \`main\`, \`develop\`
+
+          ## Files liên quan
+          - Tạo \`.github/workflows/ci.yml\`" \
+            "enhancement,P0-critical,comp:infra,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Backup & PITR validation: test restore procedure" \
+            "## Mô tả
+          Xác nhận quy trình backup và PITR hoạt động đúng theo tài liệu.
+
+          ## Tasks
+          - [ ] Chạy \`infra/backup/postgres/backup-base.sh\` → verify output
+          - [ ] Test WAL archiving với \`archive-wal.sh\`
+          - [ ] Simulate restore với \`restore-pitr.sh\` (môi trường staging)
+          - [ ] Verify backup integrity với \`verify-backup.sh\`
+          - [ ] Update runbook nếu có sai sót
+          - [ ] Cấu hình cron job cho automated backups
+
+          ## Files liên quan
+          - \`infra/backup/postgres/\`
+          - \`docs/BACKUP_DISASTER_RECOVERY.md\`" \
+            "enhancement,P2-medium,comp:infra,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          create_issue \
+            "Write integration tests: license activation flow" \
+            "## Mô tả
+          Tests end-to-end cho license lifecycle.
+
+          ## Test cases
+          - [ ] Activate valid license → success
+          - [ ] Activate expired license → 403
+          - [ ] Activate already-bound license (different device) → 409
+          - [ ] Rebind license (within limit) → success
+          - [ ] Rebind license (exceeds limit) → 403
+          - [ ] Validate license with valid nonce → success
+          - [ ] Validate license with replay nonce → 401
+          - [ ] Clock skew > 5 min → 401
+
+          ## Setup
+          - Test DB với seed data
+          - Mock time để test expiry scenarios" \
+            "enhancement,P1-high,comp:license,sprint:1" \
+            "Sprint 1 – Core Foundation"
+
+          create_issue \
+            "Write integration tests: approval workflow (import conflicts)" \
+            "## Mô tả
+          Tests cho luồng import và xử lý conflict.
+
+          ## Test cases
+          - [ ] Import CSV không có conflict → auto-approve
+          - [ ] Import CSV có conflict → tạo approval request
+          - [ ] Admin approve conflict → apply server data
+          - [ ] Admin reject import → rollback
+          - [ ] Concurrent imports từ 2 users → handle locking
+          - [ ] Large import (10k rows) → performance test <30s
+
+          ## Files liên quan
+          - \`apps/api/src/modules/imports/\`
+          - \`apps/api/src/modules/approvals/\`" \
+            "enhancement,P1-high,comp:import,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          create_issue \
+            "Setup monitoring: Prometheus metrics + health check endpoint" \
+            "## Mô tả
+          Thêm observability cho API server.
+
+          ## Tasks
+          - [ ] \`GET /health\` – liveness check (DB ping, disk space)
+          - [ ] \`GET /metrics\` – Prometheus format
+          - [ ] Metrics cần track:
+            - HTTP request rate, latency (p50, p95, p99)
+            - Active license count
+            - Sync queue depth
+            - DB connection pool usage
+            - Error rate by route
+          - [ ] Alert rules: error rate >5%, latency p99 >2s" \
+            "enhancement,P2-medium,comp:infra,comp:api,sprint:2" \
+            "Sprint 2 – Sales Features"
+
+          echo "✅ Infra & testing issues hoàn tất"
+
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [seed-decisions, seed-backend, seed-desktop, seed-infra-testing]
+    if: always()
+    steps:
+      - name: In tổng kết
+        run: |
+          echo "========================================="
+          echo "Bootstrap Issues - Kết quả"
+          echo "========================================="
+          echo "✅ Labels đã tạo: ~18 labels"
+          echo "✅ Milestones: 3 (Sprint 1, Sprint 2, MVP)"
+          echo "✅ Decision issues: 5"
+          echo "✅ Backend issues: 7"
+          echo "✅ Desktop issues: 5"
+          echo "✅ Infra & Testing issues: 5"
+          echo "-----------------------------------------"
+          echo "Tổng: ~22 issues đã được seed"
+          echo ""
+          echo "🔗 Xem issues tại:"
+          echo "   https://github.com/${{ github.repository }}/issues"
