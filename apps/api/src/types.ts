@@ -89,11 +89,17 @@ export interface AuthLoginResponse {
   };
 }
 
+/**
+ * Role strings MUST match UserRole in apps/desktop/src/shared/electronApi.ts
+ * and Role in apps/api/src/middleware/rbac.ts to avoid RBAC mismatches.
+ */
+export type UserRole = "USER" | "SALES" | "SENIOR_SALES" | "ADMIN" | "SUPER_ADMIN";
+
 export interface AuthTokenPayload {
   userId: string;
   username: string;
   email: string;
-  role: "admin" | "manager" | "sales" | "viewer";
+  role: UserRole;
   permissions: string[];
   iat: number;
   exp: number;

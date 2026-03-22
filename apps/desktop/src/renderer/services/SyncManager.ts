@@ -135,12 +135,15 @@ export class SyncManager {
         // Retry logic
         for (const item of batch) {
           if (item.retryCount < this.config.maxRetries) {
+            // Increment before scheduling so each retry reads the updated count
+            store.incrementRetryCount(item.id);
+            const delay = this.config.retryDelayMs * Math.pow(2, item.retryCount);
             setTimeout(() => {
-              // Retry this item
-              console.log(`[SyncManager] Retrying item ${item.id}`);
-            }, this.config.retryDelayMs * Math.pow(2, item.retryCount));
+              console.log(`[SyncManager] Retrying item ${item.id} (attempt ${item.retryCount + 1})`);
+              void this.sync();
+            }, delay);
           } else {
-              store.updateSyncQueueItemStatus(item.id, "failed");
+            store.updateSyncQueueItemStatus(item.id, "failed");
             store.recordSync("failed");
           }
         }

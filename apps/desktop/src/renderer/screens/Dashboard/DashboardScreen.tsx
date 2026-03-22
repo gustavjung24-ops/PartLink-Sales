@@ -2,33 +2,23 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLicense } from "../../hooks/useLicense";
 import { useOfflineStore } from "../../stores/offlineStore";
+import { getLicenseBadgeClass, calcDaysRemaining } from "../../lib/licenseUtils";
 
-const recentSearchesSeed = [
-  "Turbine NGV-200",
-  "Filter F1200 / mã chéo",
-  "Valve kit PZ-77",
-  "Bơm dầu LPX-9",
-];
+const RECENT_SEARCHES_KEY = "sparelink:recentSearches";
+const MAX_RECENT_SEARCHES = 5;
 
-function differenceInDays(endDate: Date, startDate: Date): number {
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.ceil((endDate.getTime() - startDate.getTime()) / msPerDay);
+function loadRecentSearches(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
 }
 
-function statusColor(state: string, daysRemaining: number): string {
-  if (state === "ACTIVE") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
-  }
-
-  if (state === "TRIAL" && daysRemaining > 7) {
-    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200";
-  }
-
-  if (state === "TRIAL" && daysRemaining <= 7) {
-    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200";
-  }
-
-  return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200";
+function persistSearch(term: string): void {
+  const existing = loadRecentSearches().filter((s) => s !== term);
+  existing.unshift(term);
+  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(existing.slice(0, MAX_RECENT_SEARCHES)));
 }
 
 export function DashboardScreen(): JSX.Element {
@@ -36,17 +26,20 @@ export function DashboardScreen(): JSX.Element {
   const { license, state } = useLicense();
   const { isOnline, lastSyncTime, getPendingSyncItems, stats } = useOfflineStore();
   const [quickSearch, setQuickSearch] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => loadRecentSearches());
 
-  const daysRemaining = useMemo(() => {
-    if (!license?.expiresAt) {
-      return 0;
-    }
+  const daysRemaining = useMemo(() => calcDaysRemaining(license?.expiresAt ?? null), [license?.expiresAt]);
 
-    return Math.max(0, differenceInDays(new Date(license.expiresAt), new Date()));
-  }, [license?.expiresAt]);
-
-  const pendingQuotes = 7;
+  // TODO: replace with useQuery when Quotes API is ready
+  const pendingQuotes = 0;
   const pendingSync = getPendingSyncItems().length;
+
+  const handleSearch = (q: string) => {
+    if (!q.trim()) return;
+    persistSearch(q.trim());
+    setRecentSearches(loadRecentSearches());
+    navigate(`/lookup?q=${encodeURIComponent(q.trim())}`);
+  };
 
   return (
     <section className="space-y-4">
@@ -72,7 +65,7 @@ export function DashboardScreen(): JSX.Element {
 
         <article className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <p className="text-sm text-slate-500 dark:text-slate-400">Trạng thái giấy phép</p>
-          <span className={["mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold", statusColor(state, daysRemaining)].join(" ")}>
+          <span className={["mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold", getLicenseBadgeClass(state, daysRemaining)].join(" ")}>
             {state === "TRIAL" ? `TRIAL (${daysRemaining} ngày)` : state}
           </span>
           <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
@@ -109,12 +102,17 @@ export function DashboardScreen(): JSX.Element {
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:ring-sky-900"
               value={quickSearch}
               onChange={(event) => setQuickSearch(event.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && quickSearch.trim()) {
+                  handleSearch(quickSearch);
+                }
+              }}
               placeholder="Nhập mã linh kiện hoặc mô tả..."
             />
             <button
               type="button"
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900"
-              onClick={() => navigate(`/lookup?q=${encodeURIComponent(quickSearch)}`)}
+              onClick={() => handleSearch(quickSearch)}
             >
               Tìm
             </button>
@@ -124,11 +122,19 @@ export function DashboardScreen(): JSX.Element {
         <article className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
           <h2 className="text-lg font-semibold">Tìm kiếm gần đây</h2>
           <ul className="mt-3 space-y-2 text-sm">
-            {recentSearchesSeed.map((item) => (
-              <li key={item} className="rounded-md bg-slate-100 px-3 py-2 dark:bg-slate-800">
-                {item}
-              </li>
-            ))}
+            {recentSearches.length === 0 ? (
+              <li className="text-slate-400 dark:text-slate-500 text-xs">Chưa có lịch sử tìm kiếm.</li>
+            ) : (
+              recentSearches.map((item) => (
+                <li
+                  key={item}
+                  className="cursor-pointer rounded-md bg-slate-100 px-3 py-2 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+                  onClick={() => handleSearch(item)}
+                >
+                  {item}
+                </li>
+              ))
+            )}
           </ul>
         </article>
       </div>

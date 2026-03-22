@@ -1,8 +1,9 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import { useLicense } from "../hooks/useLicense";
 import { useOfflineStore } from "../stores/offlineStore";
+import { getLicenseBadgeClass, calcDaysRemaining } from "../lib/licenseUtils";
 
 interface NavItem {
   label: string;
@@ -32,31 +33,14 @@ function canAccess(roles: string[], itemRoles: NavItem["roles"]): boolean {
   return roles.some((role) => itemRoles.includes(role as NavItem["roles"][number]));
 }
 
-function formatBreadcrumb(pathname: string): string[] {
-  return pathname
-    .split("/")
-    .filter(Boolean)
-    .map((segment) =>
-      decodeURIComponent(segment)
-        .replace(/-/g, " ")
-        .replace(/\b\w/g, (char) => char.toUpperCase())
-    );
-}
-
-function licenseBadgeClass(status: string, daysRemaining: number): string {
-  if (status === "ACTIVE") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
-  }
-
-  if (status === "TRIAL" && daysRemaining > 7) {
-    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200";
-  }
-
-  if (status === "TRIAL" && daysRemaining <= 7) {
-    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200";
-  }
-
-  return "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200";
+function formatBreadcrumb(pathname: string): Array<{ label: string; path: string }> {
+  const segments = pathname.split("/").filter(Boolean);
+  return segments.map((segment, index) => ({
+    label: decodeURIComponent(segment)
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase()),
+    path: "/" + segments.slice(0, index + 1).join("/"),
+  }));
 }
 
 export function MainLayout(): JSX.Element {
@@ -71,6 +55,8 @@ export function MainLayout(): JSX.Element {
   const { isOnline, lastSyncTime, getPendingSyncItems } = useOfflineStore();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => canAccess(roles, item.roles)),
@@ -79,13 +65,7 @@ export function MainLayout(): JSX.Element {
 
   const breadcrumbItems = useMemo(() => formatBreadcrumb(location.pathname), [location.pathname]);
 
-  const daysRemaining = useMemo(() => {
-    if (!license?.expiresAt) {
-      return 0;
-    }
-
-    return Math.max(0, Math.ceil((license.expiresAt - Date.now()) / (24 * 60 * 60 * 1000)));
-  }, [license?.expiresAt]);
+  const daysRemaining = useMemo(() => calcDaysRemaining(license?.expiresAt ?? null), [license?.expiresAt]);
 
   const pendingSyncCount = getPendingSyncItems().length;
 
@@ -114,9 +94,42 @@ export function MainLayout(): JSX.Element {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navigate]);
 
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Close sidebar when route changes (mobile nav)
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="flex min-h-screen bg-[radial-gradient(circle_at_top_left,_#ecfeff,_#f8fafc_45%,_#e2e8f0)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,_#1e293b,_#020617_48%,_#020617)] dark:text-slate-100">
-      <aside className="hidden w-72 border-r border-slate-200/80 bg-white/80 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/70 md:flex md:flex-col">
+      {/* Mobile overlay backdrop */}
+      {isSidebarOpen ? (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      ) : null}
+
+      <aside
+        className={[
+          "w-72 border-r border-slate-200/80 bg-white/80 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/70",
+          "flex-col",
+          // Mobile: fixed overlay, toggled by hamburger
+          isSidebarOpen ? "fixed inset-y-0 left-0 z-30 flex" : "hidden",
+          // Desktop: always visible static
+          "md:static md:z-auto md:flex",
+        ].join(" ")}
+      >
         <Link className="mb-5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold shadow-sm dark:border-slate-800 dark:bg-slate-900" to="/dashboard">
           SPARELINK SALES
         </Link>
@@ -143,7 +156,7 @@ export function MainLayout(): JSX.Element {
         <div className="mt-auto space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-xs dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center justify-between">
             <span>Giấy phép</span>
-            <span className={["rounded-full border px-2 py-0.5 font-medium", licenseBadgeClass(licenseState, daysRemaining)].join(" ")}>
+            <span className={["rounded-full border px-2 py-0.5 font-medium", getLicenseBadgeClass(licenseState, daysRemaining)].join(" ")}>
               {licenseState}
             </span>
           </div>
@@ -159,19 +172,45 @@ export function MainLayout(): JSX.Element {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/70">
           <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="text-xs text-slate-500 dark:text-slate-400">⌘/Ctrl+K Tra mã | N Báo giá mới | H Lịch sử</div>
-              <div className="text-sm text-slate-600 dark:text-slate-300">
-                <Link className="hover:text-slate-900 dark:hover:text-slate-100" to="/dashboard">
-                  Home
-                </Link>
-                {breadcrumbItems.map((segment) => (
-                  <span key={segment}> / {segment}</span>
-                ))}
+            <div className="flex items-center gap-2">
+              {/* Hamburger — only visible on mobile */}
+              <button
+                type="button"
+                aria-label="Mở menu điều hướng"
+                className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden"
+                onClick={() => setIsSidebarOpen((v) => !v)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+
+              <div className="space-y-1">
+                <div className="text-xs text-slate-500 dark:text-slate-400">⌘/Ctrl+K Tra mã | N Báo giá mới | H Lịch sử</div>
+                <div className="text-sm text-slate-600 dark:text-slate-300">
+                  <Link className="hover:text-slate-900 dark:hover:text-slate-100" to="/dashboard">
+                    Home
+                  </Link>
+                  {breadcrumbItems.map((item, index) => {
+                    const isLast = index === breadcrumbItems.length - 1;
+                    return (
+                      <span key={item.path}>
+                        {" / "}
+                        {isLast ? (
+                          <span>{item.label}</span>
+                        ) : (
+                          <Link className="hover:text-slate-900 dark:hover:text-slate-100" to={item.path}>
+                            {item.label}
+                          </Link>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            <div className="relative">
+            <div ref={profileRef} className="relative">
               <button
                 type="button"
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
@@ -202,7 +241,7 @@ export function MainLayout(): JSX.Element {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className={["rounded-full border px-2 py-1", licenseBadgeClass(licenseState, daysRemaining)].join(" ")}>
+            <span className={["rounded-full border px-2 py-1", getLicenseBadgeClass(licenseState, daysRemaining)].join(" ")}>
               {licenseState === "TRIAL" ? `TRIAL (${daysRemaining} ngày)` : licenseState}
             </span>
             <span className="rounded-full border border-slate-300 px-2 py-1 dark:border-slate-700">

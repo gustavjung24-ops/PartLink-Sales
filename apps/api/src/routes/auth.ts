@@ -16,10 +16,9 @@ import {
   AuthLoginPayload,
   AuthLoginResponse,
   AuthTokenPayload,
+  UserRole,
 } from "../types";
 import { apiError, apiSuccess } from "../errors";
-
-type UserRole = AuthTokenPayload["role"];
 
 interface UserRecord {
   id: string;
@@ -37,11 +36,11 @@ const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? "sparelink-dev-refresh-
 
 const users: UserRecord[] = [
   {
-    id: "u-viewer-01",
-    username: "viewer",
-    email: "viewer@sparelink.local",
+    id: "u-user-01",
+    username: "user",
+    email: "user@sparelink.local",
     password: "Password@123",
-    role: "viewer",
+    role: "USER",
     permissions: ["search:read"],
   },
   {
@@ -49,15 +48,15 @@ const users: UserRecord[] = [
     username: "sales",
     email: "sales@sparelink.local",
     password: "Password@123",
-    role: "sales",
+    role: "SALES",
     permissions: ["search:read", "quotes:write"],
   },
   {
-    id: "u-manager-01",
-    username: "manager",
-    email: "manager@sparelink.local",
+    id: "u-senior-01",
+    username: "senior",
+    email: "senior@sparelink.local",
     password: "Password@123",
-    role: "manager",
+    role: "SENIOR_SALES",
     permissions: ["search:read", "quotes:write", "approvals:write"],
   },
   {
@@ -65,7 +64,15 @@ const users: UserRecord[] = [
     username: "admin",
     email: "admin@sparelink.local",
     password: "Password@123",
-    role: "admin",
+    role: "ADMIN",
+    permissions: ["*"],
+  },
+  {
+    id: "u-superadmin-01",
+    username: "superadmin",
+    email: "superadmin@sparelink.local",
+    password: "Password@123",
+    role: "SUPER_ADMIN",
     permissions: ["*"],
   },
 ];
@@ -111,7 +118,7 @@ function decodeToken(token: string, secret: string): AuthTokenPayload {
     userId: String(decoded.userId ?? ""),
     username: String(decoded.username ?? ""),
     email: String(decoded.email ?? ""),
-    role: (decoded.role as AuthTokenPayload["role"]) ?? "viewer",
+    role: (decoded.role as AuthTokenPayload["role"]) ?? "USER",
     permissions: Array.isArray(decoded.permissions) ? decoded.permissions.map(String) : [],
     iat: Number(decoded.iat ?? 0),
     exp: Number(decoded.exp ?? 0),
