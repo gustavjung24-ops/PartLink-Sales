@@ -1,3 +1,18 @@
+/**
+ * Standardized IPC Response Format
+ * Platform Layer: All IPC responses follow this contract
+ */
+export interface IpcResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+  timestamp: number;
+}
+
 export interface AuthLoginPayload {
   username: string;
   password: string;
