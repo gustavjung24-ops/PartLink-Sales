@@ -9,39 +9,189 @@
  * └── GET    /api/licenses/status
  */
 
+import crypto from "crypto";
+import type { FastifyInstance } from "fastify";
 import {
+  LicenseState,
   LicenseActivationPayload,
   LicenseValidationPayload,
   LicenseValidationResponse,
   DeviceDeactivationPayload,
 } from "@sparelink/shared";
+import { apiError, apiSuccess, handleApiError, validateRequiredFields } from "../errors";
+import { ApiErrorCode } from "../types";
+import { prisma } from "../database/client";
+import { licenseRepository } from "../database/repositories";
+import { licenseService } from "../modules/licenses/services/license.service";
 
-// TODO: Implement with Fastify
-// export async function registerLicenseRoutes(fastify: FastifyInstance) {
-//   fastify.post<{ Body: LicenseActivationPayload }>("/api/licenses/activate", async (request, reply) => {
-//     // Validate license key format
-//     // Check device fingerprint matches DB
-//     // Generate activation token
-//     // Return license data + nonce for future requests
-//   });
-//
-//   fastify.post<{ Body: LicenseValidationPayload }>("/api/licenses/validate", async (request, reply) => {
-//     // Re-validate periodic: license still active?
-//     // Check nonce from previous request
-//     // Detect clock skew: client_time vs server_time
-//     // Return new nonce for next cycle
-//   });
-//
-//   fastify.post<{ Body: DeviceDeactivationPayload }>("/api/licenses/deactivate", async (request, reply) => {
-//     // Prepare license for device switch
-//     // Decrement rebinding counter
-//     // Reset device binding
-//   });
-//
-//   fastify.get<{ Params: { key: string } }>("/api/licenses/status/:key", async (request, reply) => {
-//     // Get current license status (for support/debugging)
-//   });
-// }
+function createNonce(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+function mapLicenseState(status: string, isTrial: boolean): LicenseState {
+  if (isTrial && status !== "REVOKED") {
+    return LicenseState.TRIAL;
+  }
+
+  switch (status) {
+    case "ACTIVATED":
+      return LicenseState.ACTIVE;
+    case "EXPIRED":
+      return LicenseState.EXPIRED;
+    case "SUSPENDED":
+      return LicenseState.SUSPENDED;
+    case "REVOKED":
+      return LicenseState.DEACTIVATED;
+    default:
+      return LicenseState.NO_LICENSE;
+  }
+}
+
+async function buildValidationResponse(key: string, machineId: string, message?: string): Promise<LicenseValidationResponse | null> {
+  const license = await licenseRepository.findByKey(key);
+  if (!license) {
+    return null;
+  }
+
+  const activation = license.activations.find((item) => item.machineId === machineId) ?? license.activations[0] ?? null;
+  const expiresAt = license.expiryDate ?? license.trialEndDate ?? activation?.expiresAt ?? license.createdAt;
+
+  return {
+    success: true,
+    status: mapLicenseState(license.status, license.isTrial),
+    licenseData: {
+      key: license.licenseKey,
+      deviceId: activation?.machineId ?? machineId,
+      status: mapLicenseState(license.status, license.isTrial),
+      activatedAt: (activation?.activatedAt ?? license.createdAt).getTime(),
+      expiresAt: expiresAt.getTime(),
+      productName: "SPARELINK Pro",
+      productVersion: "1.0.0",
+      features: ["search", "quotes", "offline-sync"],
+      maxDeviceResets: 2,
+      totalResets: activation?.rebindCount ?? 0,
+      lastResetDate: activation?.rebindLastAt?.getTime(),
+    },
+    serverTime: Date.now(),
+    nonce: createNonce(),
+    message,
+  };
+}
+
+export async function registerLicenseRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.post<{ Body: LicenseActivationPayload }>("/activate", async (request, reply) => {
+    const validation = validateRequiredFields(request.body as unknown as Record<string, unknown>, ["key", "deviceFingerprint"]);
+    if (validation) {
+      return reply.code(400).send(apiError(ApiErrorCode.MISSING_REQUIRED_FIELD, validation));
+    }
+
+    const result = await licenseService.activateLicense(
+      request.body.key,
+      request.body.deviceFingerprint.machineId,
+      request.body.deviceFingerprint as unknown as Record<string, unknown>
+    );
+
+    if (!result.activated) {
+      return reply.code(400).send(apiError(ApiErrorCode.INVALID_PAYLOAD, result.error ?? "Activation failed"));
+    }
+
+    const response = await buildValidationResponse(request.body.key, request.body.deviceFingerprint.machineId, "License activated");
+    return reply.code(200).send(apiSuccess(response));
+  });
+
+  fastify.post<{ Body: LicenseValidationPayload }>("/validate", async (request, reply) => {
+    const validation = validateRequiredFields(request.body as unknown as Record<string, unknown>, ["key", "deviceFingerprint", "lastNonce", "clientTime"]);
+    if (validation) {
+      return reply.code(400).send(apiError(ApiErrorCode.MISSING_REQUIRED_FIELD, validation));
+    }
+
+    const result = await licenseService.validateLicense(request.body.key, request.body.deviceFingerprint.machineId);
+    if (!result.valid) {
+      return reply.code(401).send(apiError(ApiErrorCode.UNAUTHORIZED, result.reason ?? "License validation failed"));
+    }
+
+    const response = await buildValidationResponse(request.body.key, request.body.deviceFingerprint.machineId, "License valid");
+    return reply.code(200).send(apiSuccess(response));
+  });
+
+  fastify.post<{ Body: DeviceDeactivationPayload }>("/deactivate", async (request, reply) => {
+    const validation = validateRequiredFields(request.body as unknown as Record<string, unknown>, ["key", "deviceId", "reason"]);
+    if (validation) {
+      return reply.code(400).send(apiError(ApiErrorCode.MISSING_REQUIRED_FIELD, validation));
+    }
+
+    try {
+      const license = await licenseRepository.findByKey(request.body.key);
+      if (!license) {
+        return reply.code(404).send(apiError(ApiErrorCode.NOT_FOUND, "License not found"));
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const deactivated = await tx.activation.updateMany({
+          where: {
+            licenseId: license.id,
+            machineId: request.body.deviceId,
+            status: "ACTIVE",
+          },
+          data: {
+            status: "REVOKED",
+            rebindLastAt: new Date(),
+          },
+        });
+
+        if (deactivated.count > 0) {
+          await tx.license.update({
+            where: { id: license.id },
+            data: {
+              activationCount: {
+                decrement: Math.min(deactivated.count, license.activationCount),
+              },
+            },
+          });
+        }
+
+        return deactivated.count;
+      });
+
+      if (result === 0) {
+        return reply.code(404).send(apiError(ApiErrorCode.NOT_FOUND, "Active device activation not found"));
+      }
+
+      return reply.code(200).send(apiSuccess({ success: true, message: "License deactivated" }));
+    } catch (error) {
+      return reply.code(500).send(handleApiError(error));
+    }
+  });
+
+  fastify.get<{ Params: { key: string } }>("/status/:key", async (request, reply) => {
+    try {
+      const license = await licenseRepository.findByKey(request.params.key);
+      if (!license) {
+        return reply.code(404).send(apiError(ApiErrorCode.NOT_FOUND, "License not found"));
+      }
+
+      const activation = license.activations[0] ?? null;
+      const expiresAt = license.expiryDate ?? license.trialEndDate ?? activation?.expiresAt ?? license.createdAt;
+
+      return reply.code(200).send(
+        apiSuccess({
+          key: license.licenseKey,
+          status: license.status,
+          activatedAt: (activation?.activatedAt ?? license.createdAt).getTime(),
+          expiresAt: expiresAt.getTime(),
+          deviceId: activation?.machineId ?? "",
+          resets: {
+            current: activation?.rebindCount ?? 0,
+            max: 2,
+            resetDate: activation?.rebindLastAt?.getTime() ?? 0,
+          },
+        })
+      );
+    } catch (error) {
+      return reply.code(500).send(handleApiError(error));
+    }
+  });
+}
 
 export interface LicenseRoutes {
   /**

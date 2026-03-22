@@ -6,7 +6,7 @@ import { ApiErrorCode } from "../../types";
 
 export async function registerApprovalRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get(
-    "/api/approvals",
+    "/",
     { preHandler: [authGuard, roleGuard(["SENIOR_SALES", "ADMIN", "SUPER_ADMIN"])] },
     async (request, reply) => {
       const query = request.query as { entityType?: string };
@@ -16,7 +16,7 @@ export async function registerApprovalRoutes(fastify: FastifyInstance): Promise<
   );
 
   fastify.get(
-    "/api/approvals/:entityType/:entityId/history",
+    "/:entityType/:entityId/history",
     { preHandler: [authGuard, roleGuard(["SENIOR_SALES", "ADMIN", "SUPER_ADMIN"])] },
     async (request, reply) => {
       const params = request.params as { entityType?: string; entityId?: string };
@@ -30,7 +30,7 @@ export async function registerApprovalRoutes(fastify: FastifyInstance): Promise<
   );
 
   fastify.patch(
-    "/api/approvals/:id/approve",
+    "/:id/approve",
     { preHandler: [authGuard, roleGuard(["SENIOR_SALES", "ADMIN", "SUPER_ADMIN"])] },
     async (request, reply) => {
       const params = request.params as { id?: string };
@@ -55,7 +55,7 @@ export async function registerApprovalRoutes(fastify: FastifyInstance): Promise<
   );
 
   fastify.patch(
-    "/api/approvals/:id/reject",
+    "/:id/reject",
     { preHandler: [authGuard, roleGuard(["SENIOR_SALES", "ADMIN", "SUPER_ADMIN"])] },
     async (request, reply) => {
       const params = request.params as { id?: string };

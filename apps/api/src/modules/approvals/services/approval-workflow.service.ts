@@ -73,14 +73,18 @@ export class ApprovalWorkflowService {
     reason?: string
   ): Promise<Approval | null> {
     try {
+      const approvalUpdate = {
+        status: "APPROVED",
+        approvedBy: approverId,
+        approvedAt: new Date(),
+        rejectionReason: null,
+      } as Prisma.ApprovalUpdateInput & Record<string, unknown>;
+
+      approvalUpdate["approvalNote"] = reason || null;
+
       const approval = await prisma.approval.update({
         where: { id: approvalId },
-        data: {
-          status: "APPROVED",
-          approvedBy: approverId,
-          approvedAt: new Date(),
-          rejectionReason: reason || null,
-        },
+        data: approvalUpdate,
         include: { requestedByUser: true },
       });
 
@@ -149,6 +153,8 @@ export class ApprovalWorkflowService {
         approval,
         timestamp: new Date(),
       });
+
+      await this.handleRejectionAction(approval);
 
       return approval;
     } catch (error) {
@@ -222,15 +228,44 @@ export class ApprovalWorkflowService {
         break;
 
       case "IMPORT_BATCH":
-        // Mark all rows in batch as APPLIED
-        await prisma.importRowStaging.updateMany({
-          where: { batchId: approval.entityId },
-          data: { status: "APPLIED" },
-        });
+        {
+          const [batchId, rowId] = approval.entityId.split(":");
+          if (rowId) {
+            await prisma.importRowStaging.update({
+              where: { id: rowId },
+              data: {
+                batchId,
+                status: "STAGED",
+                processedBy: approval.approvedBy,
+                processedAt: approval.approvedAt ?? new Date(),
+                rejectionReason: null,
+              },
+            });
+          }
+        }
         break;
 
       default:
         console.warn(`[ApprovalWorkflow] Unknown entity type: ${approval.entityType}`);
+    }
+  }
+
+  private async handleRejectionAction(approval: Approval) {
+    if (approval.status !== "REJECTED") return;
+
+    if (approval.entityType === "IMPORT_BATCH") {
+      const [, rowId] = approval.entityId.split(":");
+      if (!rowId) return;
+
+      await prisma.importRowStaging.update({
+        where: { id: rowId },
+        data: {
+          status: "REJECTED",
+          processedBy: approval.approvedBy,
+          processedAt: approval.approvedAt ?? new Date(),
+          rejectionReason: approval.rejectionReason,
+        },
+      }).catch(() => null);
     }
   }
 

@@ -269,7 +269,7 @@ model ProductMapping {
   aiPrompt      String?   @db.Text
   
   // Revision tracking
-  revision      Int       @default(autoincrement()) @db.SmallInt
+  revision      Int       @default(1) @db.SmallInt
   status        String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUPERSEDED
   rejectionReason String? @db.Text
   
@@ -283,11 +283,26 @@ model ProductMapping {
   
   primaryProduct Product  @relation("primary", fields: [primaryProductId], references: [id], onDelete: Cascade)
   alternateProduct Product? @relation("alternate", fields: [alternateProductId], references: [id], onDelete: SetNull)
+  revisionHistory ProductMappingRevision[]
   
   @@index([mappingType])
   @@index([status])
   @@index([confidence])
   @@map("product_mappings")
+}
+
+model ProductMappingRevision {
+  id            String    @id @default(uuid()) @db.Uuid
+  mappingId      String    @db.Uuid
+  revision       Int       @db.SmallInt
+  snapshot       Json      @default("{}")
+  changedBy      String?   @db.VarChar(255)
+  createdAt      DateTime  @default(now())
+
+  mapping        ProductMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId, revision])
+  @@map("mapping_revisions")
 }
 
 /// Quote: Sales proposal
@@ -437,7 +452,7 @@ model ImportRowStaging {
   rawData       Json      @default("{}")
   
   // Processing state
-  status        String    @default("NEW") // NEW, VALIDATED, CONFLICT, TESTED, APPLIED, REJECTED
+  status        String    @default("NEW") // NEW, VALIDATED, CONFLICT, STAGED, APPLIED, REJECTED
   
   // Conflict tracking
   conflictType  String?   @db.VarChar(100) // e.g., "DUPLICATE_CODE", "SPEC_MISMATCH"
@@ -479,6 +494,7 @@ model Approval {
   status        String    @default("PENDING") // PENDING, APPROVED, REJECTED
   approvedBy    String?   @db.Uuid
   approvedAt    DateTime?
+  approvalNote  String?   @db.Text
   rejectionReason String? @db.Text
   
   updatedAt     DateTime  @updatedAt

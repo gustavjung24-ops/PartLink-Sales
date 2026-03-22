@@ -127,7 +127,7 @@ function decodeToken(token: string, secret: string): AuthTokenPayload {
 }
 
 export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.post<{ Body: AuthLoginPayload }>("/api/auth/login", async (request, reply) => {
+  fastify.post<{ Body: AuthLoginPayload }>("/login", async (request, reply) => {
     const { username, password } = request.body;
 
     if (!username || !password) {
@@ -164,7 +164,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
     return reply.code(200).send(apiSuccess(response));
   });
 
-  fastify.post<{ Body: { refreshToken?: string } }>("/api/auth/logout", async (request, reply) => {
+  fastify.post<{ Body: { refreshToken?: string } }>("/logout", async (request, reply) => {
     const refreshToken = request.body?.refreshToken;
     if (refreshToken) {
       refreshAllowList.delete(refreshToken);
@@ -173,7 +173,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
     return reply.code(200).send(apiSuccess({ revoked: true }));
   });
 
-  fastify.post<{ Body: { refreshToken?: string } }>("/api/auth/refresh", async (request, reply) => {
+  fastify.post<{ Body: { refreshToken?: string } }>("/refresh", async (request, reply) => {
     const refreshToken = request.body?.refreshToken;
 
     if (!refreshToken) {
@@ -207,7 +207,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
     }
   });
 
-  fastify.get("/api/auth/me", async (request, reply) => {
+  fastify.get("/me", async (request, reply) => {
     const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {

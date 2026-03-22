@@ -6,18 +6,9 @@
 import { PrismaClient } from "@prisma/client";
 import { isProd } from "../config";
 
-// Global client instance (singleton pattern for Fastify)
-declare global {
-  var prisma: PrismaClient | undefined;
-}
-
-export const prisma =
-  global.prisma ||
-  new PrismaClient({
-    log: isProd ? ["error"] : ["query", "info", "warn", "error"],
-  });
-
-if (!isProd) global.prisma = prisma;
+export const prisma = new PrismaClient({
+  log: isProd ? ["error"] : ["query", "info", "warn", "error"],
+});
 
 /**
  * Connect to database

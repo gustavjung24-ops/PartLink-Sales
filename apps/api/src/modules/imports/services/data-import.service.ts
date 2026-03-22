@@ -2,7 +2,7 @@
  * Data Import Service with Conflict Resolution
  * Platform Layer: Bulk product data import, conflict detection, approval workflow
  *
- * States: NEW → VALIDATED → [CONFLICT → TESTED] → APPLIED | REJECTED
+ * States: NEW → VALIDATED → [CONFLICT → STAGED] → APPLIED | REJECTED
  * Conflict resolution: Manual review, applies at key decision point
  */
 
@@ -41,6 +41,8 @@ function toJsonValue<T>(value: T): Prisma.InputJsonValue {
 function readImportRow(value: Prisma.JsonValue | null): ImportRow {
   return (value ?? {}) as unknown as ImportRow;
 }
+
+type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
 
 export class DataImportService {
   /**
@@ -145,9 +147,9 @@ export class DataImportService {
   /**
    * Detect conflicts with existing products
    */
-  private async detectConflict(data: ImportRow): Promise<ConflictData | null> {
+  private async detectConflict(data: ImportRow, client: PrismaClientLike = prisma): Promise<ConflictData | null> {
     // Check for duplicate code
-    const existing = await prisma.productCode.findUnique({
+    const existing = await client.productCode.findUnique({
       where: { codeNormalized: data.code.toLowerCase().replace(/\s+/g, "") },
       include: { product: true },
     });
@@ -240,61 +242,79 @@ export class DataImportService {
         continue;
       }
 
-      if (row.status !== "VALIDATED" && row.status !== "TESTED") {
+      if (row.status !== "VALIDATED" && row.status !== "STAGED") {
         continue;
       }
 
       try {
-        const data = readImportRow(row.rawData);
+        const outcome = await prisma.$transaction(async (tx) => {
+          const data = readImportRow(row.rawData);
 
-        // Normalize product code for lookup
-        const normalizedCode = data.code.toLowerCase().replace(/\s+/g, "");
+          if (row.status === "VALIDATED") {
+            const latestConflict = await this.detectConflict(data, tx);
+            if (latestConflict) {
+              await tx.importRowStaging.update({
+                where: { id: row.id },
+                data: {
+                  status: "CONFLICT",
+                  conflictType: latestConflict.type,
+                  conflictData: toJsonValue(latestConflict),
+                  processedBy: approvedBy,
+                  processedAt: new Date(),
+                },
+              });
+              return "CONFLICT" as const;
+            }
+          }
 
-        // Try to find existing product
-        const existingCode = await prisma.productCode.findUnique({
-          where: { codeNormalized: normalizedCode },
-          include: { product: true },
-        });
-
-        if (existingCode) {
-          // Update existing product
-          await prisma.product.update({
-            where: { id: existingCode.product.id },
-            data: {
-              specsJsonB: toJsonValue(data.specsJsonB || {}),
-              unitPrice: data.unitPrice,
-            },
+          const normalizedCode = data.code.toLowerCase().replace(/\s+/g, "");
+          const existingCode = await tx.productCode.findUnique({
+            where: { codeNormalized: normalizedCode },
+            include: { product: true },
           });
-        } else {
-          // Create new product
-          await prisma.product.create({
-            data: {
-              name: data.name,
-              category: data.category,
-              unitPrice: data.unitPrice,
-              specsJsonB: toJsonValue(data.specsJsonB || {}),
-              productCodes: {
-                create: {
-                  code: data.code,
-                  codeNormalized: normalizedCode,
-                  sourceSystem: "IMPORT",
+
+          if (existingCode) {
+            await tx.product.update({
+              where: { id: existingCode.product.id },
+              data: {
+                specsJsonB: toJsonValue(data.specsJsonB || {}),
+                unitPrice: data.unitPrice,
+              },
+            });
+          } else {
+            await tx.product.create({
+              data: {
+                name: data.name,
+                category: data.category,
+                unitPrice: data.unitPrice,
+                specsJsonB: toJsonValue(data.specsJsonB || {}),
+                productCodes: {
+                  create: {
+                    code: data.code,
+                    codeNormalized: normalizedCode,
+                    sourceSystem: "IMPORT",
+                  },
                 },
               },
+            });
+          }
+
+          await tx.importRowStaging.update({
+            where: { id: row.id },
+            data: {
+              status: "APPLIED",
+              processedBy: approvedBy,
+              processedAt: new Date(),
+              rejectionReason: null,
             },
           });
-        }
 
-        // Mark row as applied
-        await prisma.importRowStaging.update({
-          where: { id: row.id },
-          data: {
-            status: "APPLIED",
-            processedBy: approvedBy,
-            processedAt: new Date(),
-          },
+          return "APPLIED" as const;
         });
 
-        applied++;
+        if (outcome === "APPLIED") {
+          applied++;
+        }
       } catch (error) {
         console.error(`[DataImport] Error applying row ${row.id}: ${error}`);
         rejected++;
@@ -339,14 +359,14 @@ export class DataImportService {
     reason: string,
     resolvedBy: string
   ): Promise<ImportRowStaging> {
-    let newStatus: "TESTED" | "APPLIED" | "REJECTED" = "TESTED";
+    let newStatus: "STAGED" | "APPLIED" | "REJECTED" = "STAGED";
 
     if (decision === "APPLY_OVERRIDE") {
-      newStatus = "TESTED"; // Mark for later application
+      newStatus = "STAGED";
     } else if (decision === "USE_EXISTING") {
-      newStatus = "APPLIED"; // Skip this, keep existing
+      newStatus = "APPLIED";
     } else {
-      newStatus = "REJECTED"; // Discard
+      newStatus = "REJECTED";
     }
 
     const updated = await prisma.importRowStaging.update({
@@ -355,7 +375,7 @@ export class DataImportService {
         status: newStatus,
         processedBy: resolvedBy,
         processedAt: new Date(),
-        rejectionReason: reason,
+        rejectionReason: newStatus === "REJECTED" ? reason : null,
       },
     });
 
@@ -375,7 +395,7 @@ export class DataImportService {
       NEW: 0,
       VALIDATED: 0,
       CONFLICT: 0,
-      TESTED: 0,
+      STAGED: 0,
       APPLIED: 0,
       REJECTED: 0,
     };

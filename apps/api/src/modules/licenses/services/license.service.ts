@@ -44,13 +44,32 @@ interface ActivationResult {
 
 export class LicenseService {
   private encryptionKey: Buffer;
-  private jwtSecret: string;
+  private signingKey: string;
 
   constructor() {
     // Use config encryption key (32 bytes for AES-256)
     const keyStr = config.encryptionKey;
     this.encryptionKey = Buffer.from(keyStr.padEnd(32, "0").slice(0, 32));
-    this.jwtSecret = config.jwtSecret;
+    this.signingKey = config.jwtSecret;
+  }
+
+  private signMetadata(customerId: string, expiryDate: string): string {
+    return crypto
+      .createHmac("sha256", this.signingKey)
+      .update(`${customerId}|${expiryDate}`)
+      .digest("hex");
+  }
+
+  private verifyMetadataSignature(metadata: LicenseMetadata): boolean {
+    const expectedSignature = this.signMetadata(metadata.customerId, metadata.expiryDate);
+    const actual = Buffer.from(metadata.signature, "hex");
+    const expected = Buffer.from(expectedSignature, "hex");
+
+    if (actual.length !== expected.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(actual, expected);
   }
 
   /**
@@ -101,7 +120,12 @@ export class LicenseService {
       let plaintext = decipher.update(ciphertext, "hex", "utf8");
       plaintext += decipher.final("utf8");
 
-      return JSON.parse(plaintext);
+      const metadata = JSON.parse(plaintext) as LicenseMetadata;
+      if (!this.verifyMetadataSignature(metadata)) {
+        return null;
+      }
+
+      return metadata;
     } catch (error) {
       console.error("[LicenseService] Decryption failed:", error);
       return null;
@@ -119,7 +143,7 @@ export class LicenseService {
     const metadata: LicenseMetadata = {
       customerId: params.customerId,
       expiryDate: expiryDate.toISOString(),
-      signature: crypto.randomBytes(16).toString("hex"), // Random for demo
+      signature: this.signMetadata(params.customerId, expiryDate.toISOString()),
     };
 
     const encryptedMetadata = this.encryptMetadata(metadata);

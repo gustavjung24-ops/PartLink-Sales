@@ -26,6 +26,9 @@ import pino from "pino";
 import { config } from "./config";
 import { connectDatabase, disconnectDatabase, runMigrations, seedDatabase } from "./database/client";
 import { registerAuthRoutes } from "./routes/auth";
+import { registerPartRoutes } from "./routes/parts";
+import { registerSyncRoutes } from "./routes/sync";
+import { registerLicenseRoutes } from "./routes/license";
 import { registerKnowledgeRoutes } from "./modules/knowledge/routes";
 import { registerApprovalRoutes } from "./modules/approvals/routes";
 
@@ -81,9 +84,12 @@ async function startServer() {
       environment: config.nodeEnv,
     }));
 
-    await app.register(registerAuthRoutes);
-    await app.register(registerKnowledgeRoutes);
-    await app.register(registerApprovalRoutes);
+    await app.register(registerAuthRoutes, { prefix: "/api/auth" });
+    await app.register(registerPartRoutes, { prefix: "/api/parts" });
+    await app.register(registerSyncRoutes, { prefix: "/api/sync" });
+    await app.register(registerLicenseRoutes, { prefix: "/api/licenses" });
+    await app.register(registerKnowledgeRoutes, { prefix: "/api/knowledge" });
+    await app.register(registerApprovalRoutes, { prefix: "/api/approvals" });
 
     // Global error handler
     app.setErrorHandler((error, request, reply) => {

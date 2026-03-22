@@ -10,28 +10,28 @@ const knowledgeHandler = {
 };
 
 export async function registerKnowledgeRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.post("/api/knowledge/gaps", knowledgeHandler.logGap);
+  fastify.post("/gaps", knowledgeHandler.logGap);
 
   fastify.get(
-    "/api/knowledge/gaps",
+    "/gaps",
     { preHandler: [authGuard, roleGuard(["ADMIN", "SUPER_ADMIN"])] },
     knowledgeHandler.listGaps
   );
 
   fastify.post(
-    "/api/knowledge/documents",
+    "/documents",
     { preHandler: [authGuard, roleGuard(["ADMIN", "SUPER_ADMIN"])] },
     knowledgeHandler.uploadDocument
   );
 
   fastify.patch(
-    "/api/knowledge/documents/:id/approve",
+    "/documents/:id/approve",
     { preHandler: [authGuard, roleGuard(["ADMIN", "SUPER_ADMIN"])] },
     knowledgeHandler.approveDocument
   );
 
   fastify.delete(
-    "/api/knowledge/documents/:id",
+    "/documents/:id",
     { preHandler: [authGuard, roleGuard(["SUPER_ADMIN"])] },
     knowledgeHandler.deleteDocument
   );
