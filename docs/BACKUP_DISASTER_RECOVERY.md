@@ -2,38 +2,105 @@
 
 ## Overview
 
-SPARELINK implements a comprehensive backup and recovery strategy for PostgreSQL database with multiple layers of protection:
+PartLink implements a comprehensive backup and recovery strategy for PostgreSQL database, SQLite cache, and License Server with multiple layers of protection.
 
-### RTO/RPO Targets
-- **Recovery Time Objective (RTO)**: < 1 hour
-- **Recovery Point Objective (RPO)**: < 15 minutes
+### RTO/RPO Targets by Component
+
+| Component | RPO | RTO | Justification |
+|-----------|-----|-----|---|
+| PostgreSQL (Primary) | ≤ 1 hour | ≤ 4 hours | Critical business data; 24h window acceptable for partial outage |
+| SQLite Cache (Desktop) | ≤ 1 sync cycle | Immediate | Self-rebuilds automatically from server; no manual recovery needed |
+| License Server | ≤ 1 hour | ≤ 2 hours | Activation records must be recoverable; extended uptime acceptable |
+
+**Definitions:**
+- **RPO (Recovery Point Objective)**: Maximum acceptable data loss measured in time
+- **RTO (Recovery Time Objective)**: Maximum acceptable downtime before recovery completes
+- **Compliance**: RTO/RPO approved by stakeholders and documented in SLAs
 
 ---
 
 ## 1. Backup Strategy
 
-### 1.1 Full Backup
-- **Frequency**: Daily at 2:00 AM UTC
-- **Retention**: 30 days
-- **Method**: `pg_basebackup` physical base backup (required for point-in-time recovery)
-- **Location**: S3 bucket with encryption
+### 1.0 Encryption & Security
 
-```bash
-# Daily physical base backup
-pg_basebackup -U ${DB_USER} -h ${DB_HOST} \
-  --pgdata=- \
-  --format=tar \
-  --gzip \
-  --wal-method=none \
-  > base_$(date +%Y%m%d_%H%M%S).tar.gz
+**Backup Encryption Requirements:**
 
-# Upload to S3
-aws s3 cp base_*.tar.gz s3://sparelink-backups/base/
+All backups MUST be encrypted both at rest and in transit:
+
+```yaml
+At Rest (Storage):
+  - S3 Backups: AES-256 encryption (SSE-S3 or SSE-KMS)
+  - Local Backups: AES-256 encrypted via pgBackRest
+  - Encryption Keys: Managed via AWS Secrets Manager / HashiCorp Vault
+  - Key Rotation: Every 90 days; old keys retained for decryption
+
+In Transit (Network):
+  - All backup transfers: TLS 1.3 minimum
+  - S3 requests: Enforce TLS via bucket policy
+  - WAL archiving: Use HTTPS endpoints only
+
+Key Management:
+  - Encryption keys NEVER hardcoded in scripts
+  - Separate recovery key stored in different secure vault
+  - Multi-person approval required for key access
+  - All key access logged and audited
 ```
 
-### 1.2 Incremental Backups (WAL Archive)
+### 1.1 Primary Backup Method: pg_basebackup (Physical Backups)
+
+**Purpose:** Physical full backups compatible with Point-In-Time Recovery (PITR)
+
+- **Frequency**: Daily at 2:00 AM UTC
+- **Retention**: 30 days
+- **Method**: `pg_basebackup` physical base backup (PITR-compatible)
+- **Location**: S3 bucket with AES-256 encryption
+- **Tool**: pgBackRest or Barman for automation & WAL management
+
+```bash
+# Daily physical base backup via pgBackRest
+pgbackrest backup --type=full --repo=s3
+
+# Configuration (pgbackrest.conf):
+[global]
+repo1-type=s3
+repo1-s3-bucket=sparelink-backups-prod
+repo1-s3-region=us-east-1
+repo1-s3-key=${AWS_ACCESS_KEY_ID}
+repo1-s3-key-secret=${AWS_SECRET_ACCESS_KEY}
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass=${BACKUP_ENCRYPTION_KEY}
+
+[stanza=prod]
+pg1-path=/var/lib/postgresql/15/main
+```
+
+### 1.2 Supplementary Backup Method: pg_dump (Logical Backups)
+
+**Purpose:** Logical backups for schema verification, portability, and supplementary protection
+
+- **Frequency**: Daily at 3:00 AM UTC (after pg_basebackup completes)
+- **Retention**: 14 days
+- **Scope**: Full database schema + data (or schema-only for rapid testing)
+- **Location**: S3 encrypted bucket (separate prefix from physical backups)
+
+```bash
+# Logical backup with compression & encryption
+pg_dump --verbose \
+  --format=custom \
+  --compress=9 \
+  --blobs \
+  postgresql://user:pass@localhost/sparelink | \
+  gpg --symmetric --cipher-algo AES256 --armor > backup.sql.custom.gpg
+
+# Upload to S3
+aws s3 cp backup.sql.custom.gpg s3://sparelink-backups-prod/logical/ \
+  --sse=AES256 \
+  --metadata="backup-type=logical,timestamp=$(date -Iseconds)"
+```
+
+### 1.3 Incremental Backups (WAL Archive)
 - **Frequency**: Continuous via PostgreSQL WAL archiving
-- **Method**: WAL-E or PgBackRest for managed WAL shipping
+- **Method**: pgBackRest for managed WAL shipping
 - **Retention**: 7 days of WAL files
 - **Storage**: S3, with 99.999999999% durability
 
@@ -44,13 +111,14 @@ wal_level = replica
 max_wal_senders = 10
 wal_keep_size = 1GB
 archive_mode = on
-archive_command = 'wal-e wal-push %p'
+archive_command = 'pgbackrest --stanza=prod archive-push %p'
 archive_timeout = 300
 ```
 
-### 1.3 Point-in-Time Recovery (PITR)
-- Enables recovery to any second within WAL retention period
+### 1.4 Point-in-Time Recovery (PITR)
+- Enables recovery to any second within WAL retention period (7 days)
 - Combine a physical base backup + subsequent WAL files
+- Tested monthly via DR drills
 
 ---
 
@@ -182,25 +250,86 @@ resource "aws_db_instance" "sparelink" {
 
 ## 5. Monitoring & Alerting
 
-### Key Metrics
+### 5.1 Required Alerts
+
+All alerts must be configured with critical escalation (PagerDuty, Slack webhooks, or email):
+
+| Alert | Condition | Severity | Action |
+|-------|-----------|----------|--------|
+| **Backup Failed** | Any backup job exits with error code | CRITICAL | Notify on-call DBA immediately |
+| **Backup Staleness** | Last successful backup > 25 hours ago | CRITICAL | Escalate; investigate backup pipeline |
+| **WAL Archive Backlog** | WAL files pending archive > 1GB | WARNING | Check S3 connectivity; verify credentials |
+| **S3 Replication Lag** | Backup not replicated to DR region > 2h | WARNING | Verify replication settings |
+| **Encryption Key Access Failure** | Backup encryption key unreadable | CRITICAL | Trigger incident; verify key manager availability |
+
+### 5.2 Key Metrics
+
 ```yaml
-backup_size_bytes:           # Alert if growth > 20%/day
-backup_age_minutes:          # Alert if > 24 hours
-wal_archive_delay_seconds:   # Alert if > 300 seconds
-disk_space_used_percent:     # Alert if > 80% full
-recovery_time_estimate:      # Track for RTO validation
+# Backup Performance Metrics
+backup_size_bytes:                # Alert if growth > 20%/day
+backup_duration_seconds:          # Alert if > 2x baseline
+backup_age_minutes:               # Alert if not updated >= 25 hours
+backup_success_count:             # Rate should be >= 1 per 24h
+backup_failure_count:             # Alert if > 0
+
+# WAL Archiving Metrics
+wal_archive_delay_seconds:        # Alert if > 300 seconds (5 min)
+wal_archive_backlog_bytes:        # Alert if > 1GB
+wal_files_archived_count:         # For rate tracking
+
+# Storage Metrics
+s3_bucket_size_bytes:             # Track for cost optimization
+s3_replication_status:            # Monitor cross-region replication
+backup_encryption_key_age_days:   # Alert if > 90 days (before rotation)
+
+# Recovery Tracking
+recovery_time_estimate_seconds:   # Track RTO vs. 4-hour target
+last_successful_restore_test:     # Alert if > 30 days (missing monthly drill)
 ```
 
-### Prometheus Queries
-```promql
-# Last backup age
-time() - pg_stat_file{path="backup_latest"}
+### 5.3 Prometheus/AlertManager Configuration
 
-# Backup frequency check
-rate(pg_backup_count[24h]) >= 1
+```yaml
+# prometheus-rules.yml
+groups:
+  - name: backup_alerts
+    interval: 60s
+    rules:
+      # Alert: No backup in last 25 hours
+      - alert: BackupStaleness
+        expr: (time() - backup_last_completion_time) / 3600 > 25
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No backup for {{ $value | humanizeDuration }}"
+          
+      # Alert: Backup job failed
+      - alert: BackupJobFailure
+        expr: increase(backup_failures_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup job failed in last hour"
+          
+      # Alert: WAL archive backlog
+      - alert: WALArchiveBacklog
+        expr: pg_wal_archive_backlog_bytes > 1073741824  # 1GB
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WAL archive backlog: {{ $value | humanize }}B"
 
-# WAL archive backlog
-pg_wal_archive_backlog_bytes > 1GB
+# alertmanager-config.yml
+receivers:
+  - name: backup_alerts
+    pagerduty_configs:
+      - service_key: ${PAGERDUTY_SERVICE_KEY}
+    slack_configs:
+      - api_url: ${SLACK_WEBHOOK_URL}
+        channel: '#database-alerts'
 ```
 
 ---
@@ -236,6 +365,7 @@ Schedule 4x/year:
 
 ## 7. Specific Concerns & Solutions
 
+
 ### 7.1 Large Tables (> 10GB)
 - Use `pg_dump --jobs` for parallel export/import
 - Partition large tables by date/range for faster reload
@@ -255,6 +385,60 @@ Schedule 4x/year:
 - Validate checksums on startup: `PRAGMA integrity_check;`
 - Auto-rebuild cache if corruption detected: `VACUUM; ANALYZE;`
 - Implement periodic snapshot export for user data recovery
+
+### 7.5 S3 Security Controls
+If using S3 for backup storage, enforce the following:
+
+- Public access to bucket is BLOCKED (block public ACLs and policies)
+- Versioning is ENABLED on all backup buckets
+- Cross-region replication is ENABLED for geo-redundancy
+- IAM policy for backup access is scoped to backup role only (least privilege)
+- S3 bucket policy enforces TLS and denies unencrypted uploads
+
+### 7.6 License Server Backup & Recovery
+- Activation records and license keys are backed up separately from main DB
+- License server backup is encrypted and stored in a separate S3 prefix or vault
+- Recovery procedure for license server is documented and tested quarterly
+- Offline grace period and SLA are documented
+
+### 7.7 SQLite Sync Conflict Resolution
+- Define sync conflict strategy: **server-wins** (default) or manual merge for critical data
+- All sync overwrite events are logged for audit trail
+- After restore, sync engine checks for divergence and triggers conflict handler
+
+---
+
+## 10. Backup & DR Checklist (Sprint 1)
+
+#### General
+- [ ] RTO/RPO targets defined and approved by stakeholders
+- [ ] Backup encryption at rest and in transit
+- [ ] Encryption keys managed via secrets manager
+
+#### PostgreSQL
+- [ ] pg_basebackup as primary (PITR-compatible)
+- [ ] pg_dump as supplementary logical backup
+- [ ] Backup automation via pgBackRest or Barman
+- [ ] Backup failure alerting configured
+- [ ] Backup staleness alert (> 25 hours)
+- [ ] Monthly restore drill with sign-off log
+- [ ] S3 bucket: public access blocked, versioning enabled, cross-region replication, IAM-scoped policy
+
+#### SQLite
+- [ ] Sync conflict resolution strategy defined (server-wins vs. manual merge)
+- [ ] Sync overwrite events logged for audit trail
+
+#### License Server
+- [ ] Activation records and license keys backed up separately
+- [ ] Recovery procedure documented
+
+---
+
+## Sprint Planning & Recommendations
+
+**Labels:** infrastructure, devops, security, sprint-1
+
+**Recommendation:** Consider splitting PostgreSQL backup automation (pgBackRest/Barman, S3, alerting) into a separate sub-task/issue for Sprint 1 to keep scope manageable.
 
 ---
 
