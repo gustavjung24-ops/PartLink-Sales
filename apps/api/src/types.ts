@@ -3,6 +3,12 @@
  * Platform Layer: Define API contracts before implementing routes
  */
 
+import type {
+  ConflictResolution,
+  MachineContext,
+  SyncQueueItem,
+} from "@sparelink/shared";
+
 /**
  * REST API Response Format - Standardized for all endpoints
  */
@@ -87,6 +93,8 @@ export interface AuthTokenPayload {
   userId: string;
   username: string;
   email: string;
+  role: "admin" | "manager" | "sales" | "viewer";
+  permissions: string[];
   iat: number;
   exp: number;
 }
@@ -126,33 +134,6 @@ export interface PartParseResult {
 }
 
 /**
- * Sync/Offline types
+ * Sync/Offline types are sourced from @sparelink/shared to avoid drift
  */
-export interface SyncQueueItem {
-  id: string;
-  action: "CREATE" | "UPDATE" | "DELETE";
-  resource: string;
-  resourceId: string;
-  payload: unknown;
-  status: "PENDING" | "SYNCED" | "FAILED";
-  retryCount: number;
-  createdAt: number;
-  syncedAt?: number;
-}
-
-export interface ConflictResolution {
-  strategy: "CLIENT_WINS" | "SERVER_WINS" | "MERGE";
-  clientVersion: unknown;
-  serverVersion: unknown;
-  resolvedData: unknown;
-}
-
-/**
- * Machine context - For offline-first sync
- */
-export interface MachineContext {
-  machineId: string;
-  osType: string;
-  appVersion: string;
-  lastSyncTime: number;
-}
+export type { SyncQueueItem, ConflictResolution, MachineContext };

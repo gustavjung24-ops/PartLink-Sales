@@ -5,7 +5,7 @@
 
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useLicenseProtection } from "../hooks/useLicense";
+import { useLicense, useLicenseProtection } from "../hooks/useLicense";
 import { LicenseState } from "@sparelink/shared";
 
 interface LicenseGuardProps {
@@ -57,13 +57,27 @@ export function LicenseGuard({ children, fallback }: LicenseGuardProps) {
  * License status indicator for UI
  */
 export function LicenseStatusIndicator() {
-  const { isAccessAllowed, state } = useLicenseProtection();
+  const { state } = useLicenseProtection();
+  const { license } = useLicense();
+
+  const daysRemaining = React.useMemo(() => {
+    if (!license?.expiresAt) {
+      return 0;
+    }
+
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.max(0, Math.ceil((license.expiresAt - Date.now()) / msPerDay));
+  }, [license?.expiresAt]);
 
   const statusConfig: Record<string, { bg: string; text: string; emoji: string }> = {
     [LicenseState.ACTIVE]: { bg: "bg-green-100", text: "text-green-700", emoji: "✓" },
-    [LicenseState.TRIAL]: { bg: "bg-yellow-100", text: "text-yellow-700", emoji: "⏱️" },
+    [LicenseState.TRIAL]: {
+      bg: daysRemaining > 7 ? "bg-blue-100" : "bg-orange-100",
+      text: daysRemaining > 7 ? "text-blue-700" : "text-orange-700",
+      emoji: "⏱",
+    },
     [LicenseState.EXPIRED]: { bg: "bg-red-100", text: "text-red-700", emoji: "✕" },
-    [LicenseState.SUSPENDED]: { bg: "bg-orange-100", text: "text-orange-700", emoji: "⚠️" },
+    [LicenseState.SUSPENDED]: { bg: "bg-red-100", text: "text-red-700", emoji: "!" },
     [LicenseState.NO_LICENSE]: { bg: "bg-gray-100", text: "text-gray-700", emoji: "?" },
     [LicenseState.DEACTIVATED]: { bg: "bg-blue-100", text: "text-blue-700", emoji: "↻" },
   };
@@ -83,11 +97,23 @@ export function LicenseStatusIndicator() {
  */
 export function LicenseInfoWidget() {
   const { isAccessAllowed, isExpired, isSuspended, state } = useLicenseProtection();
+  const { license } = useLicense();
+
+  const daysRemaining = React.useMemo(() => {
+    if (!license?.expiresAt) {
+      return 0;
+    }
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.max(0, Math.ceil((license.expiresAt - Date.now()) / msPerDay));
+  }, [license?.expiresAt]);
 
   if (isAccessAllowed) {
+    const trialClass = daysRemaining > 7 ? "text-blue-600" : "text-orange-600";
+    const statusClass = state === LicenseState.TRIAL ? trialClass : "text-green-600";
+
     return (
       <div className="text-xs text-gray-600">
-        License: <span className="font-semibold text-green-600">{state}</span>
+        License: <span className={`font-semibold ${statusClass}`}>{state}</span>
       </div>
     );
   }

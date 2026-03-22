@@ -3,7 +3,7 @@ import { AuthGuard } from "./components/AuthGuard";
 import { LicenseGuard } from "./components/LicenseGuard";
 import { RoleGuard } from "./components/RoleGuard";
 import { MainLayout } from "./layouts/MainLayout";
-import { DashboardPage } from "./pages/DashboardPage";
+import { DashboardScreen } from "./screens/Dashboard/DashboardScreen";
 import { LicenseActivationPage } from "./pages/License/LicenseActivationPage";
 import { LoginScreen } from "./screens/Login/LoginScreen";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -42,7 +42,7 @@ export const router = createHashRouter([
         path: "dashboard",
         element: (
           <LicenseGuard>
-            <DashboardPage />
+            <DashboardScreen />
           </LicenseGuard>
         )
       },

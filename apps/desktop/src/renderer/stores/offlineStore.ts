@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useEffect } from "react";
 import { SyncQueueItem, MachineContext } from "@sparelink/shared";
 
 /**
@@ -228,11 +229,22 @@ export const useOfflineStore = create<OfflineStore>()(
 export function useOnlineStatus() {
   const { isOnline, setOnline } = useOfflineStore();
 
-  // Set up listeners (only on client)
-  if (typeof window !== "undefined") {
-    window.addEventListener("online", () => setOnline(true));
-    window.addEventListener("offline", () => setOnline(false));
-  }
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [setOnline]);
 
   return isOnline;
 }
