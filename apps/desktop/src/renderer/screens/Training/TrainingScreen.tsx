@@ -229,7 +229,19 @@ export function TrainingScreen(): JSX.Element {
                       cls += "border-slate-200 text-slate-400 dark:border-slate-700";
                     }
                     return (
-                      <li key={oi} className={cls} role="button" onClick={() => selectQuizAnswer(activeModule.id, qi, oi)}>
+                      <li
+                        key={oi}
+                        className={cls}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectQuizAnswer(activeModule.id, qi, oi)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            selectQuizAnswer(activeModule.id, qi, oi);
+                          }
+                        }}
+                      >
                         {opt}
                       </li>
                     );

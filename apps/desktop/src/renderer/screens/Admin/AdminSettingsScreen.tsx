@@ -32,11 +32,38 @@ interface AiConfig {
   maxResultsPerSearch: number;
 }
 
+interface SystemConfig {
+  apiBaseUrl: string;
+  syncIntervalSeconds: number;
+  offlineCacheDays: number;
+}
+
+interface LicenseConfig {
+  licenseKeyMasked: string;
+  maxActivations: number;
+  supportContact: string;
+}
+
 const DEFAULT_AI: AiConfig = {
   enabled: true,
   confidenceThreshold: 50,
   requireApprovalThreshold: 75,
   maxResultsPerSearch: 5,
+};
+
+const SYSTEM_CONFIG_KEY = "sparelink:admin:systemConfig";
+const LICENSE_CONFIG_KEY = "sparelink:admin:licenseConfig";
+
+const DEFAULT_SYSTEM_CONFIG: SystemConfig = {
+  apiBaseUrl: "https://api.sparelink.local",
+  syncIntervalSeconds: 30,
+  offlineCacheDays: 14,
+};
+
+const DEFAULT_LICENSE_CONFIG: LicenseConfig = {
+  licenseKeyMasked: "SL-2026-XXXX-XXXX",
+  maxActivations: 3,
+  supportContact: "license@sparelink.local",
 };
 
 interface AuditEntry {
@@ -66,6 +93,16 @@ function loadAiConfig(): AiConfig {
   try { return { ...DEFAULT_AI, ...JSON.parse(localStorage.getItem(AI_CONFIG_KEY) ?? "{}") as Partial<AiConfig> }; } catch { return DEFAULT_AI; }
 }
 function saveAiConfig(c: AiConfig) { localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(c)); }
+
+function loadSystemConfig(): SystemConfig {
+  try { return { ...DEFAULT_SYSTEM_CONFIG, ...JSON.parse(localStorage.getItem(SYSTEM_CONFIG_KEY) ?? "{}") as Partial<SystemConfig> }; } catch { return DEFAULT_SYSTEM_CONFIG; }
+}
+function saveSystemConfig(c: SystemConfig) { localStorage.setItem(SYSTEM_CONFIG_KEY, JSON.stringify(c)); }
+
+function loadLicenseConfig(): LicenseConfig {
+  try { return { ...DEFAULT_LICENSE_CONFIG, ...JSON.parse(localStorage.getItem(LICENSE_CONFIG_KEY) ?? "{}") as Partial<LicenseConfig> }; } catch { return DEFAULT_LICENSE_CONFIG; }
+}
+function saveLicenseConfig(c: LicenseConfig) { localStorage.setItem(LICENSE_CONFIG_KEY, JSON.stringify(c)); }
 
 function loadAudit(): AuditEntry[] {
   try { return JSON.parse(localStorage.getItem(AUDIT_KEY) ?? "null") as AuditEntry[] ?? DEFAULT_AUDIT; } catch { return DEFAULT_AUDIT; }
@@ -263,6 +300,74 @@ function SyncStatsTab(): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
+// Tab: Cấu hình hệ thống
+// ---------------------------------------------------------------------------
+function SystemConfigTab(): JSX.Element {
+  const [config, setConfig] = useState<SystemConfig>(loadSystemConfig);
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    saveSystemConfig(config);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="max-w-xl space-y-4">
+      <label className="block text-sm">
+        <span className="font-medium">API Base URL</span>
+        <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={config.apiBaseUrl} onChange={(e) => setConfig((prev) => ({ ...prev, apiBaseUrl: e.target.value }))} />
+      </label>
+      <label className="block text-sm">
+        <span className="font-medium">Chu kỳ đồng bộ (giây)</span>
+        <input type="number" min={5} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={config.syncIntervalSeconds} onChange={(e) => setConfig((prev) => ({ ...prev, syncIntervalSeconds: Number(e.target.value) }))} />
+      </label>
+      <label className="block text-sm">
+        <span className="font-medium">Số ngày giữ cache offline</span>
+        <input type="number" min={1} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={config.offlineCacheDays} onChange={(e) => setConfig((prev) => ({ ...prev, offlineCacheDays: Number(e.target.value) }))} />
+      </label>
+      <button type="button" onClick={save} className="rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">
+        {saved ? "✓ Đã lưu" : "Lưu cấu hình hệ thống"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tab: Quản lý giấy phép
+// ---------------------------------------------------------------------------
+function LicenseManagementTab(): JSX.Element {
+  const [config, setConfig] = useState<LicenseConfig>(loadLicenseConfig);
+  const [saved, setSaved] = useState(false);
+
+  const save = () => {
+    saveLicenseConfig(config);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="max-w-xl space-y-4">
+      <label className="block text-sm">
+        <span className="font-medium">License key</span>
+        <input className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-mono dark:border-slate-700 dark:bg-slate-950" value={config.licenseKeyMasked} onChange={(e) => setConfig((prev) => ({ ...prev, licenseKeyMasked: e.target.value }))} />
+      </label>
+      <label className="block text-sm">
+        <span className="font-medium">Số máy kích hoạt tối đa</span>
+        <input type="number" min={1} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={config.maxActivations} onChange={(e) => setConfig((prev) => ({ ...prev, maxActivations: Number(e.target.value) }))} />
+      </label>
+      <label className="block text-sm">
+        <span className="font-medium">Liên hệ hỗ trợ</span>
+        <input type="email" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-950" value={config.supportContact} onChange={(e) => setConfig((prev) => ({ ...prev, supportContact: e.target.value }))} />
+      </label>
+      <button type="button" onClick={save} className="rounded-md bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700">
+        {saved ? "✓ Đã lưu" : "Lưu cấu hình giấy phép"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab: Nhật ký kiểm toán
 // ---------------------------------------------------------------------------
 function AuditLogTab(): JSX.Element {
@@ -275,7 +380,9 @@ function AuditLogTab(): JSX.Element {
     const a = document.createElement("a");
     a.href = url;
     a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
   return (
@@ -310,11 +417,13 @@ function AuditLogTab(): JSX.Element {
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
-type TabId = "users" | "ai" | "sync" | "audit";
+type TabId = "users" | "system" | "ai" | "license" | "sync" | "audit";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "users", label: "Người dùng" },
+  { id: "system", label: "Cấu hình hệ thống" },
   { id: "ai", label: "Cấu hình AI" },
+  { id: "license", label: "Quản lý giấy phép" },
   { id: "sync", label: "Đồng bộ" },
   { id: "audit", label: "Nhật ký kiểm toán" },
 ];
@@ -364,7 +473,9 @@ export function AdminSettingsScreen(): JSX.Element {
       {/* Tab panels */}
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {activeTab === "users" && <UsersTab />}
+        {activeTab === "system" && <SystemConfigTab />}
         {activeTab === "ai" && <AiConfigTab />}
+        {activeTab === "license" && <LicenseManagementTab />}
         {activeTab === "sync" && <SyncStatsTab />}
         {activeTab === "audit" && <AuditLogTab />}
       </div>

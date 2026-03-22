@@ -1,6 +1,9 @@
 import { useOfflineStore } from "../../stores/offlineStore";
+import { useSyncManager } from "../../services/SyncManager";
 
 export function SyncStatusScreen(): JSX.Element {
+  const syncManager = useSyncManager();
+  const config = syncManager.getConfig();
   const {
     isOnline,
     lastSyncTime,
@@ -123,7 +126,7 @@ export function SyncStatusScreen(): JSX.Element {
             ))}
           </ul>
           <p className="px-5 pb-3 text-xs text-amber-700 dark:text-amber-400">
-            Xung đột xảy ra khi cùng một bản ghi được sửa ở cả local và server. Chiến lược hiện tại: <strong>CLIENT_WINS</strong>.
+            Xung đột xảy ra khi cùng một bản ghi được sửa ở cả local và server. Chiến lược hiện tại: <strong>{config.conflictStrategy}</strong>.
           </p>
         </div>
       )}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { MOCK_RESULTS } from "../Search/searchTypes";
-import { type Quote, type QuoteLineItem, quoteTotal } from "./quoteTypes";
+import { MOCK_QUOTES, type Quote, type QuoteLineItem, quoteTotal } from "./quoteTypes";
 
 let _idCounter = 100;
 const newId = () => `l_${++_idCounter}`;
@@ -32,11 +32,13 @@ function buildPreviewText(quote: Quote): string {
 
 export function QuoteEditorScreen(): JSX.Element {
   const navigate = useNavigate();
+  const { id: quoteId } = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const preloadPartId = searchParams.get("partId");
   const printRef = useRef<HTMLDivElement>(null);
 
   /* ── state ── */
+  const [loadedQuote, setLoadedQuote] = useState<Quote | null>(null);
   const [title, setTitle] = useState(`BG-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -45,8 +47,25 @@ export function QuoteEditorScreen(): JSX.Element {
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const isEditing = Boolean(quoteId && quoteId !== "new");
+
+  useEffect(() => {
+    if (!quoteId || quoteId === "new") return;
+
+    const existing = MOCK_QUOTES.find((item) => item.id === quoteId);
+    if (!existing) return;
+
+    setLoadedQuote(existing);
+    setTitle(existing.title);
+    setCustomerName(existing.customerName);
+    setCustomerEmail(existing.customerEmail);
+    setNote(existing.note);
+    setLines(existing.lines.map((line) => ({ ...line })));
+  }, [quoteId]);
+
   /* ── preload part from URL param ── */
   useEffect(() => {
+    if (isEditing) return;
     if (!preloadPartId) return;
     const part = MOCK_RESULTS.find((p) => p.id === preloadPartId);
     if (!part) return;
@@ -60,19 +79,19 @@ export function QuoteEditorScreen(): JSX.Element {
       unitPrice: part.price ?? 0,
       note: "",
     }]);
-  }, [preloadPartId]);
+  }, [isEditing, preloadPartId]);
 
   const quote: Quote = {
-    id: "new",
+    id: loadedQuote?.id ?? "new",
     title,
     customerName,
     customerEmail,
-    status: "draft",
+    status: loadedQuote?.status ?? "draft",
     lines,
-    createdAt: Date.now(),
+    createdAt: loadedQuote?.createdAt ?? Date.now(),
     updatedAt: Date.now(),
-    expiresAt: Date.now() + 14 * 86_400_000,
-    createdBy: "",
+    expiresAt: loadedQuote?.expiresAt ?? Date.now() + 14 * 86_400_000,
+    createdBy: loadedQuote?.createdBy ?? "",
     note,
   };
 
@@ -95,7 +114,32 @@ export function QuoteEditorScreen(): JSX.Element {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    if (!printRef.current) {
+      setShowPreview(true);
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${quote.title}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+            pre { white-space: pre-wrap; font-family: monospace; font-size: 12px; background: #f8fafc; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px; }
+          </style>
+        </head>
+        <body>${printRef.current.innerHTML}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
 
   return (
     <section className="mx-auto max-w-4xl space-y-4">
@@ -103,7 +147,7 @@ export function QuoteEditorScreen(): JSX.Element {
         <button type="button" className="text-sm text-sky-600 hover:underline" onClick={() => navigate("/quotes")}>
           ← Danh sách báo giá
         </button>
-        <h1 className="text-xl font-semibold">Tạo báo giá mới</h1>
+        <h1 className="text-xl font-semibold">{isEditing ? "Chỉnh sửa báo giá" : "Tạo báo giá mới"}</h1>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

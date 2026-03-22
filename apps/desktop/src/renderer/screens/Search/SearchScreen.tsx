@@ -4,6 +4,41 @@ import { useOfflineStore } from "../../stores/offlineStore";
 import type { PartResult, ResultSource, SearchFilters } from "./searchTypes";
 import { EMPTY_FILTERS, MOCK_RESULTS } from "./searchTypes";
 
+const HISTORY_KEY = "sparelink:recentSearches";
+
+interface HistoryEntry {
+  query: string;
+  timestamp: number;
+}
+
+function persistSearchHistory(query: string): void {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const current = raw ? (JSON.parse(raw) as unknown) : [];
+    const normalized = Array.isArray(current)
+      ? current
+          .map((item) => {
+            if (typeof item === "string") {
+              return { query: item, timestamp: Date.now() } satisfies HistoryEntry;
+            }
+
+            const entry = item as Partial<HistoryEntry>;
+            return {
+              query: String(entry.query ?? ""),
+              timestamp: Number(entry.timestamp ?? Date.now()),
+            } satisfies HistoryEntry;
+          })
+          .filter((entry) => entry.query.length > 0)
+      : [];
+
+    const deduped = normalized.filter((entry) => entry.query !== query);
+    const updated = [{ query, timestamp: Date.now() }, ...deduped].slice(0, 100);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  } catch {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify([{ query, timestamp: Date.now() }]));
+  }
+}
+
 /* ─── helpers ─────────────────────────────────────────────────────────── */
 
 function sourceBadge(source: ResultSource): { label: string; cls: string } {
@@ -188,8 +223,8 @@ export function SearchScreen(): JSX.Element {
     const q = query.trim();
     setCommitted(q);
     if (q) setSearchParams({ q }, { replace: true });
-    // Record in offline sync queue for history
     if (q) {
+      persistSearchHistory(q);
       addToSyncQueue({ action: "search", resource: "part_search", data: { query: q, timestamp: new Date().toISOString() } });
     }
   };

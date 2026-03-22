@@ -244,6 +244,10 @@ export class SyncManager {
     await this.sync();
   }
 
+  getConfig(): Readonly<SyncManagerConfig> {
+    return this.config;
+  }
+
   /**
    * Get sync status
    */
