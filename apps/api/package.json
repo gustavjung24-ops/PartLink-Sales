@@ -1,0 +1,29 @@
+{
+  "name": "@sparelink/api",
+  "version": "1.0.0",
+  "description": "SPARELINK Backend API",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@sparelink/shared": "workspace:*",
+    "fastify": "^4.25.1",
+    "prisma": "^5.7.1",
+    "@prisma/client": "^5.7.1",
+    "zod": "^3.22.4",
+    "pino": "^8.17.2",
+    "jsonwebtoken": "^9.1.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.10.5",
+    "@types/jsonwebtoken": "^9.0.7"
+  }
+}

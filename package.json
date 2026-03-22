@@ -1,0 +1,32 @@
+{
+  "name": "sparelink",
+  "version": "1.0.0",
+  "description": "SPARELINK - Offline-first desktop application for spare parts sales",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --recursive dev",
+    "build": "pnpm --recursive build",
+    "test": "pnpm --recursive test",
+    "lint": "pnpm --recursive lint",
+    "type-check": "pnpm --recursive type-check",
+    "postinstall": "pnpm --recursive exec -- node -e \"console.log('Installed')\""
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "sparelink",
+    "partlink",
+    "offline-first",
+    "electron",
+    "react",
+    "typescript"
+  ],
+  "author": "PartLink Team",
+  "license": "MIT"
+}
