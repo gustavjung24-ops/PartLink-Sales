@@ -1,52 +1,59 @@
-import type { FastifyReply, FastifyRequest, HookHandlerDoneFunction } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 export type Role = "USER" | "SALES" | "SENIOR_SALES" | "ADMIN" | "SUPER_ADMIN";
 
-interface AuthenticatedUser {
+export interface AuthenticatedUser {
   id: string;
   email: string;
   roles: Role[];
 }
 
-// Type-safe request with user
-type AuthenticatedRequest = FastifyRequest & {
-  user?: AuthenticatedUser;
+type JwtPayload = {
+  userId?: string;
+  id?: string;
+  email?: string;
+  role?: Role;
+  roles?: Role[];
 };
 
-export function authGuard(
+type AuthenticatedRequest = FastifyRequest & {
+  user?: AuthenticatedUser | JwtPayload;
+};
+
+function normalizeUser(payload: JwtPayload): AuthenticatedUser {
+  const roles = Array.isArray(payload.roles)
+    ? payload.roles
+    : payload.role
+      ? [payload.role]
+      : [];
+
+  return {
+    id: payload.userId ?? payload.id ?? "",
+    email: payload.email ?? "",
+    roles,
+  };
+}
+
+export async function authGuard(
   request: FastifyRequest,
   reply: FastifyReply,
-  done: HookHandlerDoneFunction
-): void {
-  const authHeader = request.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+): Promise<void> {
+  try {
+    await request.jwtVerify();
+    const authenticatedRequest = request as AuthenticatedRequest;
+    authenticatedRequest.user = normalizeUser((authenticatedRequest.user ?? {}) as JwtPayload);
+  } catch {
     reply.code(401).send({
       success: false,
-      error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
+      error: { code: "UNAUTHORIZED", message: "Invalid token" },
       timestamp: Date.now(),
     });
-    return;
   }
-
-  const token = authHeader.slice("Bearer ".length);
-  const roleSegment = token.split(".")[1] || "USER";
-  const role = roleSegment.toUpperCase() as Role;
-
-  const authRequest = request as AuthenticatedRequest;
-  authRequest.user = {
-    id: "mock-user-id",
-    email: "mock@sparelink.local",
-    roles: [role],
-  };
-
-  done();
 }
 
 export function roleGuard(allowedRoles: Role[]) {
-  return (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction): void => {
-    const authRequest = request as AuthenticatedRequest;
-    const userRoles = authRequest.user?.roles ?? [];
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const userRoles = ((request as AuthenticatedRequest).user as AuthenticatedUser | undefined)?.roles ?? [];
     const hasPermission = userRoles.some((role) => allowedRoles.includes(role));
 
     if (!hasPermission) {
@@ -57,7 +64,5 @@ export function roleGuard(allowedRoles: Role[]) {
       });
       return;
     }
-
-    done();
   };
 }

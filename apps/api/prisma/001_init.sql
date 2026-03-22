@@ -92,6 +92,28 @@ SELECT
   id
 FROM permissions WHERE action IN ('read', 'create', 'update', 'approve');
 
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email CITEXT UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  active BOOLEAN DEFAULT TRUE,
+  last_login_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_email ON users(email);
+
+CREATE TABLE user_roles (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  role_id INT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+  UNIQUE(user_id, role_id)
+);
+
 -- ============================================================================
 -- LICENSE MANAGEMENT
 -- ============================================================================
@@ -204,7 +226,7 @@ CREATE TABLE product_mappings (
   requires_approval BOOLEAN DEFAULT FALSE,
   ai_model VARCHAR(100),
   ai_prompt TEXT,
-  revision SMALLINT DEFAULT 1 GENERATED ALWAYS AS IDENTITY,
+  revision SMALLINT GENERATED ALWAYS AS IDENTITY,
   status VARCHAR(50) DEFAULT 'PENDING',
   rejection_reason TEXT,
   submitted_by VARCHAR(255),
@@ -403,32 +425,6 @@ INSERT INTO industry_attribute_defs (industry, attribute_name, data_type, descri
   ('API', 'rating', 'ENUM', 'API Pressure Rating', FALSE),
   ('API', 'flange_type', 'ENUM', 'Flange type per API spec', FALSE);
 
--- ============================================================================
--- USERS (Must be created after roles table)
--- ============================================================================
-
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email CITEXT UNIQUE NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  active BOOLEAN DEFAULT TRUE,
-  last_login_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_users_email ON users(email);
-
-CREATE TABLE user_roles (
-  id SERIAL PRIMARY KEY,
-  user_id UUID NOT NULL,
-  role_id INT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
-  UNIQUE(user_id, role_id)
-);
-
 -- Seed demo users
 INSERT INTO users (email, name, password_hash, active) VALUES
   ('user@sparelink.local', 'Demo User', '$2b$10$dummyhash', TRUE),
@@ -499,7 +495,7 @@ SELECT
   l.license_key,
   l.status,
   l.expiry_date,
-  CAST(DATEDIFF(day, NOW()::DATE, l.expiry_date::DATE) AS INT) as days_until_expiry,
+  EXTRACT(DAY FROM (l.expiry_date::DATE - NOW()::DATE))::INT as days_until_expiry,
   l.activation_count,
   l.max_activations,
   COUNT(a.id) as actual_activations

@@ -34,6 +34,14 @@ interface BatchImportResult {
   rejected: number;
 }
 
+function toJsonValue<T>(value: T): Prisma.InputJsonValue {
+  return value as unknown as Prisma.InputJsonValue;
+}
+
+function readImportRow(value: Prisma.JsonValue | null): ImportRow {
+  return (value ?? {}) as unknown as ImportRow;
+}
+
 export class DataImportService {
   /**
    * Create import batch
@@ -50,7 +58,7 @@ export class DataImportService {
         data: {
           batchId,
           rowNumber: i + 1,
-          rawData: JSON.stringify(rows[i]) as any,
+          rawData: toJsonValue(rows[i]),
           status: "NEW",
         },
       });
@@ -83,8 +91,7 @@ export class DataImportService {
     let conflicts = 0;
 
     for (const row of rows) {
-      // Parse raw data from JSON
-      const data = JSON.parse(JSON.stringify(row.rawData)) as ImportRow;
+      const data = readImportRow(row.rawData);
 
       // Basic validation
       if (!data.code || !data.name || !data.category) {
@@ -107,7 +114,7 @@ export class DataImportService {
           data: {
             status: "CONFLICT",
             conflictType: conflict.type,
-            conflictData: JSON.stringify(conflict) as any,
+            conflictData: toJsonValue(conflict),
           },
         });
         conflicts++;
@@ -153,8 +160,14 @@ export class DataImportService {
       if (JSON.stringify(existingSpecs) !== JSON.stringify(proposedSpecs)) {
         return {
           type: "SPEC_MISMATCH",
-          existingProduct: JSON.parse(JSON.stringify(existing.product)) as Record<string, unknown>,
-          proposedData: JSON.parse(JSON.stringify(data)) as Record<string, unknown>,
+          existingProduct: {
+            id: existing.product.id,
+            name: existing.product.name,
+            category: existing.product.category,
+            unitPrice: Number(existing.product.unitPrice),
+            specsJsonB: existing.product.specsJsonB as Record<string, unknown> | null,
+          },
+          proposedData: data as unknown as Record<string, unknown>,
         };
       }
 
@@ -167,16 +180,28 @@ export class DataImportService {
       if (priceVariance > 0.1) {
         return {
           type: "PRICE_VARIANCE",
-          existingProduct: JSON.parse(JSON.stringify(existing.product)) as Record<string, unknown>,
-          proposedData: JSON.parse(JSON.stringify(data)) as Record<string, unknown>,
+          existingProduct: {
+            id: existing.product.id,
+            name: existing.product.name,
+            category: existing.product.category,
+            unitPrice: Number(existing.product.unitPrice),
+            specsJsonB: existing.product.specsJsonB as Record<string, unknown> | null,
+          },
+          proposedData: data as unknown as Record<string, unknown>,
         };
       }
 
       // Product already exists identically
       return {
         type: "DUPLICATE_CODE",
-        existingProduct: JSON.parse(JSON.stringify(existing.product)) as Record<string, unknown>,
-        proposedData: JSON.parse(JSON.stringify(data)) as Record<string, unknown>,
+        existingProduct: {
+          id: existing.product.id,
+          name: existing.product.name,
+          category: existing.product.category,
+          unitPrice: Number(existing.product.unitPrice),
+          specsJsonB: existing.product.specsJsonB as Record<string, unknown> | null,
+        },
+        proposedData: data as unknown as Record<string, unknown>,
       };
     }
 
@@ -205,7 +230,7 @@ export class DataImportService {
       }
 
       try {
-        const data = JSON.parse(JSON.stringify(row.rawData)) as ImportRow;
+        const data = readImportRow(row.rawData);
 
         // Normalize product code for lookup
         const normalizedCode = data.code.toLowerCase().replace(/\s+/g, "");
@@ -221,7 +246,7 @@ export class DataImportService {
           await prisma.product.update({
             where: { id: existingCode.product.id },
             data: {
-              specsJsonB: (data.specsJsonB || {}) as any,
+              specsJsonB: toJsonValue(data.specsJsonB || {}),
               unitPrice: data.unitPrice,
             },
           });
@@ -232,7 +257,7 @@ export class DataImportService {
               name: data.name,
               category: data.category,
               unitPrice: data.unitPrice,
-              specsJsonB: (data.specsJsonB || {}) as any,
+              specsJsonB: toJsonValue(data.specsJsonB || {}),
               productCodes: {
                 create: {
                   code: data.code,

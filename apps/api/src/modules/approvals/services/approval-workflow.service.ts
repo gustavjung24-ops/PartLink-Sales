@@ -9,7 +9,7 @@
 
 import { prisma } from "../../../database/client";
 import { auditRepository } from "../../../database/repositories";
-import type { Approval, User } from "@prisma/client";
+import type { Approval, Prisma, User } from "@prisma/client";
 
 interface ApprovalRequest {
   entityType: string;
@@ -38,7 +38,7 @@ export class ApprovalWorkflowService {
       data: {
         entityType: request.entityType,
         entityId: request.entityId,
-        data: JSON.stringify(request.data),
+        data: request.data as Prisma.InputJsonValue,
         status: "PENDING",
         requestedBy: request.requestedById,
         requestedAt: new Date(),

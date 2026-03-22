@@ -6,6 +6,7 @@
 const requiredEnvVars = [
   "DATABASE_URL",
   "JWT_SECRET",
+  "ENCRYPTION_KEY",
 ];
 
 function getEnvVar(key: string, defaultValue?: string): string {
