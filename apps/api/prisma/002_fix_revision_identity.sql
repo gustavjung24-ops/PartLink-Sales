@@ -100,4 +100,16 @@ CREATE TRIGGER record_product_mapping_revision_update
      OR OLD.approved_by IS DISTINCT FROM NEW.approved_by)
   EXECUTE FUNCTION record_product_mapping_revision();
 
+  -- 10. Cập nhật BEFORE UPDATE trigger tăng revision: chỉ bump khi trường nghiệp vụ đổi.
+  --     Nếu không có bước này, DB cũ vẫn dùng trigger tăng revision trên MỌI UPDATE,
+  --     khiến product_mappings.revision tăng rác do update_timestamp() đổi updated_at.
+  DROP TRIGGER IF EXISTS increment_product_mapping_revision_trigger ON product_mappings;
+  CREATE TRIGGER increment_product_mapping_revision_trigger
+    BEFORE UPDATE OF status, confidence, approved_by, rejection_reason ON product_mappings
+    FOR EACH ROW
+    WHEN (OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.confidence IS DISTINCT FROM NEW.confidence
+      OR OLD.approved_by IS DISTINCT FROM NEW.approved_by)
+    EXECUTE FUNCTION increment_product_mapping_revision();
+
 COMMIT;
