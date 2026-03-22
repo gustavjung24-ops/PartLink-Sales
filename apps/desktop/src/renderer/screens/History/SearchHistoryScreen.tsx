@@ -1,33 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const HISTORY_KEY = "sparelink:recentSearches";
-
-interface HistoryEntry {
-  query: string;
-  timestamp: number;
-}
-
-function loadHistory(): HistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return [];
-    const items = JSON.parse(raw) as unknown;
-    // Support both old string[] format and new HistoryEntry[] format
-    if (!Array.isArray(items)) return [];
-    return items.map((item: unknown) => {
-      if (typeof item === "string") return { query: item, timestamp: Date.now() };
-      const entry = item as Partial<HistoryEntry>;
-      return { query: String(entry.query ?? ""), timestamp: Number(entry.timestamp ?? Date.now()) };
-    }).filter((e) => e.query.length > 0);
-  } catch {
-    return [];
-  }
-}
-
-function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
-}
+import { clearSearchHistory, loadSearchHistory, type HistoryEntry } from "../../lib/searchHistory";
 
 function exportToCsv(entries: HistoryEntry[]) {
   const header = "Truy vấn,Thời gian\n";
@@ -45,7 +18,7 @@ function exportToCsv(entries: HistoryEntry[]) {
 
 export function SearchHistoryScreen(): JSX.Element {
   const navigate = useNavigate();
-  const [entries, setEntries] = useState<HistoryEntry[]>(() => loadHistory());
+  const [entries, setEntries] = useState<HistoryEntry[]>(() => loadSearchHistory());
   const [filterText, setFilterText] = useState("");
   const [cleared, setCleared] = useState(false);
 
@@ -65,7 +38,7 @@ export function SearchHistoryScreen(): JSX.Element {
   }, [filtered]);
 
   const handleClear = () => {
-    clearHistory();
+    clearSearchHistory();
     setEntries([]);
     setCleared(true);
   };

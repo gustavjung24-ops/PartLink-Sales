@@ -144,11 +144,7 @@ export const router = createHashRouter([
       },
       {
         path: "license-center",
-        element: (
-          <RoleGuard allow={["SUPER_ADMIN"]}>
-            <PlaceholderPage title="Bản quyền" />
-          </RoleGuard>
-        ),
+        element: <Navigate to="/admin" replace />,
       },
       {
         path: "sync",

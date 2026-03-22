@@ -1,58 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLicense } from "../../hooks/useLicense";
+import { loadSearchHistory, persistSearchToHistory } from "../../lib/searchHistory";
 import { useOfflineStore } from "../../stores/offlineStore";
 import { getLicenseBadgeClass, calcDaysRemaining } from "../../lib/licenseUtils";
 
-const RECENT_SEARCHES_KEY = "sparelink:recentSearches";
 const MAX_RECENT_SEARCHES = 5;
 
-interface RecentSearchEntry {
-  query: string;
-  timestamp: number;
-}
-
 function loadRecentSearches(): string[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]") as unknown;
-    if (!Array.isArray(raw)) return [];
-
-    return raw
-      .map((item) => {
-        if (typeof item === "string") return item;
-        return String((item as Partial<RecentSearchEntry>).query ?? "");
-      })
-      .filter((item) => item.length > 0)
-      .slice(0, MAX_RECENT_SEARCHES);
-  } catch {
-    return [];
-  }
+  return loadSearchHistory(MAX_RECENT_SEARCHES).map((entry) => entry.query);
 }
 
 function persistSearch(term: string): void {
-  try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]") as unknown;
-    const normalized = Array.isArray(raw)
-      ? raw
-          .map((item) => {
-            if (typeof item === "string") {
-              return { query: item, timestamp: Date.now() } satisfies RecentSearchEntry;
-            }
-
-            const entry = item as Partial<RecentSearchEntry>;
-            return {
-              query: String(entry.query ?? ""),
-              timestamp: Number(entry.timestamp ?? Date.now()),
-            } satisfies RecentSearchEntry;
-          })
-          .filter((entry) => entry.query.length > 0)
-      : [];
-
-    const updated = [{ query: term, timestamp: Date.now() }, ...normalized.filter((entry) => entry.query !== term)].slice(0, MAX_RECENT_SEARCHES);
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
-  } catch {
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify([{ query: term, timestamp: Date.now() }]));
-  }
+  persistSearchToHistory(term, MAX_RECENT_SEARCHES);
 }
 
 export function DashboardScreen(): JSX.Element {

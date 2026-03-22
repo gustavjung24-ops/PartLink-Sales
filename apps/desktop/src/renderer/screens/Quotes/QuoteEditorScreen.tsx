@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { MOCK_RESULTS } from "../Search/searchTypes";
-import { MOCK_QUOTES, type Quote, type QuoteLineItem, quoteTotal } from "./quoteTypes";
+import { loadQuotes, type Quote, type QuoteLineItem, quoteTotal, upsertQuote } from "./quoteTypes";
 
 let _idCounter = 100;
 const newId = () => `l_${++_idCounter}`;
@@ -46,13 +46,15 @@ export function QuoteEditorScreen(): JSX.Element {
   const [lines, setLines] = useState<QuoteLineItem[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [pendingPrint, setPendingPrint] = useState(false);
 
   const isEditing = Boolean(quoteId && quoteId !== "new");
 
   useEffect(() => {
     if (!quoteId || quoteId === "new") return;
 
-    const existing = MOCK_QUOTES.find((item) => item.id === quoteId);
+    const existing = loadQuotes().find((item) => item.id === quoteId);
     if (!existing) return;
 
     setLoadedQuote(existing);
@@ -82,7 +84,7 @@ export function QuoteEditorScreen(): JSX.Element {
   }, [isEditing, preloadPartId]);
 
   const quote: Quote = {
-    id: loadedQuote?.id ?? "new",
+    id: loadedQuote?.id ?? `q_${Date.now()}`,
     title,
     customerName,
     customerEmail,
@@ -95,28 +97,8 @@ export function QuoteEditorScreen(): JSX.Element {
     note,
   };
 
-  const addLine = () => {
-    setLines((prev) => [
-      ...prev,
-      { id: newId(), partId: "", partNumber: "", name: "", manufacturer: "", qty: 1, unitPrice: 0, note: "" },
-    ]);
-  };
-
-  const updateLine = (id: string, patch: Partial<QuoteLineItem>) => {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  };
-
-  const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(buildPreviewText(quote));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handlePrint = () => {
+  const doPrint = () => {
     if (!printRef.current) {
-      setShowPreview(true);
       return;
     }
 
@@ -141,6 +123,54 @@ export function QuoteEditorScreen(): JSX.Element {
     printWindow.close();
   };
 
+  const handleSave = () => {
+    const persistedQuote: Quote = {
+      ...quote,
+      updatedAt: Date.now(),
+    };
+
+    upsertQuote(persistedQuote);
+    setLoadedQuote(persistedQuote);
+    setSavedMessage("✓ Đã lưu báo giá");
+    setTimeout(() => setSavedMessage(null), 2000);
+  };
+
+  const addLine = () => {
+    setLines((prev) => [
+      ...prev,
+      { id: newId(), partId: "", partNumber: "", name: "", manufacturer: "", qty: 1, unitPrice: 0, note: "" },
+    ]);
+  };
+
+  const updateLine = (id: string, patch: Partial<QuoteLineItem>) => {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  };
+
+  const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(buildPreviewText(quote));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handlePrint = () => {
+    if (!printRef.current) {
+      setShowPreview(true);
+      setPendingPrint(true);
+      return;
+    }
+
+    doPrint();
+  };
+
+  useEffect(() => {
+    if (pendingPrint && showPreview && printRef.current) {
+      doPrint();
+      setPendingPrint(false);
+    }
+  }, [pendingPrint, showPreview]);
+
   return (
     <section className="mx-auto max-w-4xl space-y-4">
       <div className="flex items-center gap-3">
@@ -148,6 +178,7 @@ export function QuoteEditorScreen(): JSX.Element {
           ← Danh sách báo giá
         </button>
         <h1 className="text-xl font-semibold">{isEditing ? "Chỉnh sửa báo giá" : "Tạo báo giá mới"}</h1>
+        {savedMessage ? <span className="text-sm text-emerald-600">{savedMessage}</span> : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -188,6 +219,9 @@ export function QuoteEditorScreen(): JSX.Element {
             </div>
           </dl>
           <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700" onClick={handleSave}>
+              Lưu báo giá
+            </button>
             <button type="button" className="flex-1 rounded-md bg-sky-600 px-3 py-2 text-sm text-white hover:bg-sky-700" onClick={() => setShowPreview((v) => !v)}>
               {showPreview ? "Ẩn xem trước" : "Xem trước"}
             </button>

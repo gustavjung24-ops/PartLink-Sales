@@ -25,6 +25,8 @@ export interface Quote {
   note: string;
 }
 
+const QUOTES_STORAGE_KEY = "sparelink:quotes";
+
 export function quoteTotal(quote: Quote): number {
   return quote.lines.reduce((sum, l) => sum + l.qty * l.unitPrice, 0);
 }
@@ -72,3 +74,32 @@ export const MOCK_QUOTES: Quote[] = [
     note: "",
   },
 ];
+
+export function loadQuotes(): Quote[] {
+  try {
+    const raw = localStorage.getItem(QUOTES_STORAGE_KEY);
+    if (!raw) {
+      return MOCK_QUOTES;
+    }
+
+    const parsed = JSON.parse(raw) as Quote[] | null;
+    return parsed && parsed.length > 0 ? parsed : MOCK_QUOTES;
+  } catch {
+    return MOCK_QUOTES;
+  }
+}
+
+export function saveQuotes(quotes: Quote[]): void {
+  localStorage.setItem(QUOTES_STORAGE_KEY, JSON.stringify(quotes));
+}
+
+export function upsertQuote(nextQuote: Quote): Quote[] {
+  const existing = loadQuotes();
+  const hasQuote = existing.some((quote) => quote.id === nextQuote.id);
+  const updated = hasQuote
+    ? existing.map((quote) => (quote.id === nextQuote.id ? nextQuote : quote))
+    : [nextQuote, ...existing];
+
+  saveQuotes(updated);
+  return updated;
+}

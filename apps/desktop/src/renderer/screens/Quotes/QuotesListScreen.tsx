@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MOCK_QUOTES, statusLabel, quoteTotal, type Quote } from "./quoteTypes";
+import { loadQuotes, statusLabel, quoteTotal, type Quote } from "./quoteTypes";
 
 function formatPrice(n: number) {
   return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(n);
@@ -12,7 +12,7 @@ function formatDate(ms: number) {
 
 export function QuotesListScreen(): JSX.Element {
   const navigate = useNavigate();
-  const [quotes] = useState<Quote[]>(MOCK_QUOTES);
+  const [quotes] = useState<Quote[]>(loadQuotes);
   const [filter, setFilter] = useState<"all" | Quote["status"]>("all");
 
   const visible = filter === "all" ? quotes : quotes.filter((q) => q.status === filter);

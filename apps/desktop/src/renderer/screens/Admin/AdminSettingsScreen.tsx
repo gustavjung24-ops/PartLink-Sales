@@ -307,6 +307,11 @@ function SystemConfigTab(): JSX.Element {
   const [saved, setSaved] = useState(false);
 
   const save = () => {
+    if (config.syncIntervalSeconds < 5) {
+      window.alert("Chu kỳ đồng bộ tối thiểu là 5 giây.");
+      return;
+    }
+
     saveSystemConfig(config);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -455,6 +460,7 @@ export function AdminSettingsScreen(): JSX.Element {
         {TABS.map((t) => (
           <button
             key={t.id}
+            id={`tab-${t.id}`}
             role="tab"
             aria-selected={activeTab === t.id}
             type="button"
@@ -471,7 +477,11 @@ export function AdminSettingsScreen(): JSX.Element {
       </div>
 
       {/* Tab panels */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div
+        role="tabpanel"
+        aria-labelledby={`tab-${activeTab}`}
+        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
         {activeTab === "users" && <UsersTab />}
         {activeTab === "system" && <SystemConfigTab />}
         {activeTab === "ai" && <AiConfigTab />}

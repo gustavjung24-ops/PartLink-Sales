@@ -312,7 +312,14 @@ export function TrainingScreen(): JSX.Element {
               key={m.id}
               className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
               role="button"
+              tabIndex={0}
               onClick={() => open(m.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  open(m.id);
+                }
+              }}
             >
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
