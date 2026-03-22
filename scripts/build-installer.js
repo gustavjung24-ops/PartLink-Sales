@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -23,7 +23,8 @@ if (targetFlags.length === 0) {
   } else if (process.platform === "win32") {
     targetFlags.push("--win");
   } else {
-    targetFlags.push("--win");
+    console.error("[build-installer] Unsupported platform. Use --win or --mac explicitly.");
+    process.exit(1);
   }
 }
 
@@ -94,7 +95,6 @@ function run(command, commandArgs, cwd = rootDir) {
 }
 
 validateSigning();
-mkdirSync(path.join(rootDir, "release"), { recursive: true });
 
 console.log(`[build-installer] Targets: ${targetFlags.join(" ")}`);
 console.log(`[build-installer] Publish mode: ${publish ? "always" : "never"}`);

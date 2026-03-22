@@ -28,7 +28,7 @@
     }
   ],
   "extraMetadata": {
-    "main": "dist/main/index.js"
+    "main": "dist/main/index.cjs"
   },
   "asar": true,
   "publish": [
@@ -55,8 +55,14 @@
   },
   "mac": {
     "target": [
-      "dmg",
-      "zip"
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64", "arm64"]
+      }
     ],
     "category": "public.app-category.business",
     "hardenedRuntime": true,

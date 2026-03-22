@@ -40,7 +40,8 @@ export class AppUpdaterService {
     this.setMainWindow(window);
     this.initialized = true;
 
-    autoUpdater.autoDownload = true;
+    autoUpdater.autoDownload =
+      process.env.SPARELINK_AUTO_DOWNLOAD !== "false";
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = process.env.SPARELINK_ALLOW_PRERELEASE === "true";
 
@@ -89,19 +90,27 @@ export class AppUpdaterService {
 
   async checkForUpdates(): Promise<void> {
     if (!app.isPackaged) {
-      this.emit("update-not-available", { reason: "development-mode" });
+      this.emit("update-not-available");
       return;
     }
 
     if (!this.isEligibleForRollout()) {
-      this.emit("update-not-available", {
-        reason: "staged-rollout",
-        rolloutPercentage: this.rolloutPercentage,
-      });
+      this.emit("update-not-available");
       return;
     }
 
-    await autoUpdater.checkForUpdates();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await autoUpdater.checkForUpdates();
+        return;
+      } catch (err) {
+        if (attempt === 1) {
+          this.emit("error", {
+            message: (err as Error).message || "Failed to check for updates",
+          });
+        }
+      }
+    }
   }
 
   quitAndInstall(): void {
