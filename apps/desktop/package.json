@@ -9,6 +9,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "package": "pnpm run build && electron-builder --config electron-builder.json",
+    "build:installer": "node ../../scripts/build-installer.js",
+    "build:installer:publish": "node ../../scripts/build-installer.js --publish",
     "preview": "electron-vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx"
@@ -27,6 +29,7 @@
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.3.0",
     "better-sqlite3": "^9.2.2",
+    "electron-updater": "^6.3.9",
     "node-machine-id": "^1.1.12"
   },
   "devDependencies": {

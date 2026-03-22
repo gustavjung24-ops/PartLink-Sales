@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "pnpm --recursive dev",
     "build": "pnpm --filter @sparelink/shared build && pnpm -r --filter './apps/*' build",
+    "build:desktop-installer": "node ./scripts/build-installer.js",
     "test": "pnpm --recursive test",
     "lint": "pnpm --recursive lint",
     "type-check": "pnpm --filter @sparelink/shared type-check && pnpm -r --filter './apps/*' type-check",

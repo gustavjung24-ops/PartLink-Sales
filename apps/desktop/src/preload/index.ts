@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC_CHANNELS_LEGACY, IPC_CHANNELS, type ElectronAPI, type WindowState, type IpcResponse } from "@/shared/electronApi";
+import {
+  IPC_CHANNELS_LEGACY,
+  IPC_CHANNELS,
+  type ElectronAPI,
+  type ElectronUpdaterAPI,
+  type UpdaterBridgeEvent,
+  type UpdaterEventName,
+  type WindowState,
+  type IpcResponse,
+} from "@/shared/electronApi";
 
 /**
  * Adapter: Converts IpcResponse<T> to T or throws error
@@ -80,4 +89,41 @@ const electronAPI: ElectronAPI = {
   }
 };
 
+const updaterListeners = new Map<UpdaterEventName, Map<(...args: unknown[]) => void, (_event: unknown, payload: UpdaterBridgeEvent) => void>>();
+
+const electronUpdater: ElectronUpdaterAPI = {
+  on: (event, listener) => {
+    const wrapped = (_event: unknown, payload: UpdaterBridgeEvent) => {
+      if (payload.event === event) {
+        listener(payload.data);
+      }
+    };
+
+    const existing = updaterListeners.get(event) ?? new Map();
+    existing.set(listener, wrapped);
+    updaterListeners.set(event, existing);
+    ipcRenderer.on(IPC_CHANNELS.updater.EVENT, wrapped);
+  },
+  off: (event, listener) => {
+    const listeners = updaterListeners.get(event);
+    const wrapped = listeners?.get(listener);
+    if (!wrapped) {
+      return;
+    }
+
+    ipcRenderer.removeListener(IPC_CHANNELS.updater.EVENT, wrapped);
+    listeners?.delete(listener);
+    if (listeners && listeners.size === 0) {
+      updaterListeners.delete(event);
+    }
+  },
+  checkForUpdates: async () => {
+    await ipcRenderer.invoke(IPC_CHANNELS.updater.CHECK_FOR_UPDATES);
+  },
+  quitAndInstall: async () => {
+    await ipcRenderer.invoke(IPC_CHANNELS.updater.QUIT_AND_INSTALL);
+  },
+};
+
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
+contextBridge.exposeInMainWorld("electronUpdater", electronUpdater);

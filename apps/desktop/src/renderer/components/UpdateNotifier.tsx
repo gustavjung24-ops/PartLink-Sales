@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ElectronUpdaterAPI } from "@/shared/electronApi";
 
 /**
  * UpdateNotifier — shows a non-blocking banner when electron-updater
@@ -17,23 +18,12 @@ type UpdateStatus =
   | { phase: "ready" }
   | { phase: "error"; message: string };
 
-declare global {
-  interface Window {
-    electronUpdater?: {
-      on: (event: string, listener: (...args: unknown[]) => void) => void;
-      off: (event: string, listener: (...args: unknown[]) => void) => void;
-      checkForUpdates: () => void;
-      quitAndInstall: () => void;
-    };
-  }
-}
-
 export function UpdateNotifier(): JSX.Element | null {
   const [status, setStatus] = useState<UpdateStatus>({ phase: "idle" });
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    const updater = window.electronUpdater;
+    const updater: ElectronUpdaterAPI | undefined = window.electronUpdater;
     if (!updater) return; // Running in browser dev mode
 
     const onChecking = () => setStatus({ phase: "checking" });
@@ -61,7 +51,7 @@ export function UpdateNotifier(): JSX.Element | null {
     updater.on("error", onError);
 
     // Trigger check on mount (only in packaged app — electron-updater handles that guard)
-    updater.checkForUpdates();
+    void updater.checkForUpdates();
 
     return () => {
       updater.off("checking-for-update", onChecking);
@@ -115,7 +105,9 @@ export function UpdateNotifier(): JSX.Element | null {
             <button
               type="button"
               className="mt-2 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700"
-              onClick={() => window.electronUpdater?.quitAndInstall()}
+              onClick={() => {
+                void window.electronUpdater?.quitAndInstall();
+              }}
             >
               Khởi động lại để cập nhật
             </button>

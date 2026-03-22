@@ -86,6 +86,26 @@ export interface WindowState {
   isMinimized: boolean;
 }
 
+export type UpdaterEventName =
+  | "checking-for-update"
+  | "update-available"
+  | "update-not-available"
+  | "download-progress"
+  | "update-downloaded"
+  | "error";
+
+export interface UpdaterBridgeEvent {
+  event: UpdaterEventName;
+  data?: unknown;
+}
+
+export interface ElectronUpdaterAPI {
+  on: (event: UpdaterEventName, listener: (...args: unknown[]) => void) => void;
+  off: (event: UpdaterEventName, listener: (...args: unknown[]) => void) => void;
+  checkForUpdates: () => Promise<void>;
+  quitAndInstall: () => Promise<void>;
+}
+
 export interface ElectronAPI {
   auth: {
     login: (payload: AuthLoginPayload) => Promise<AuthLoginResult>;
@@ -164,6 +184,11 @@ export const IPC_CHANNELS = {
     IS_VALID: "license:is-valid",
     CAN_REBIND: "license:can-rebind",
   },
+  updater: {
+    CHECK_FOR_UPDATES: "updater:check-for-updates",
+    QUIT_AND_INSTALL: "updater:quit-and-install",
+    EVENT: "updater:event"
+  }
 } as const;
 
 // Flattened for backwards compatibility
@@ -186,4 +211,7 @@ export const IPC_CHANNELS_LEGACY = {
   WINDOW_CLOSE: "window:close",
   WINDOW_GET_STATE: "window:get-state",
   WINDOW_STATE_CHANGED: "window:state-changed",
+  UPDATER_CHECK_FOR_UPDATES: "updater:check-for-updates",
+  UPDATER_QUIT_AND_INSTALL: "updater:quit-and-install",
+  UPDATER_EVENT: "updater:event",
 } as const;

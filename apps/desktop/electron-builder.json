@@ -1,16 +1,49 @@
 {
   "appId": "com.sparelink.desktop",
-  "productName": "SPARELINK",
+  "productName": "SPARELINK Sales",
+  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+  "copyright": "Copyright © 2026 PartLink Team",
   "directories": {
     "output": "release/${version}",
     "buildResources": "build"
   },
   "files": [
-    "dist/**/*",
-    "package.json"
+    "dist/main/**/*",
+    "dist/preload/**/*",
+    "dist/renderer/**/*",
+    "package.json",
+    "!**/*.map",
+    "!**/src/**",
+    "!**/*.ts",
+    "!**/*.tsx"
   ],
+  "extraResources": [
+    {
+      "from": "build/assets",
+      "to": "assets",
+      "filter": [
+        "**/*",
+        "!**/.DS_Store"
+      ]
+    }
+  ],
+  "extraMetadata": {
+    "main": "dist/main/index.js"
+  },
   "asar": true,
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "${env.SPARELINK_UPDATE_URL}",
+      "channel": "latest"
+    }
+  ],
   "win": {
+    "icon": "build/windows/app.ico",
+    "publisherName": "PartLink Team",
+    "verifyUpdateCodeSignature": true,
+    "signAndEditExecutable": true,
+    "requestedExecutionLevel": "asInvoker",
     "target": [
       {
         "target": "nsis",
@@ -20,10 +53,27 @@
       }
     ]
   },
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "category": "public.app-category.business",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/mac/entitlements.mac.plist",
+    "entitlementsInherit": "build/mac/entitlements.mac.inherit.plist"
+  },
   "nsis": {
     "oneClick": false,
+    "perMachine": true,
+    "allowElevation": true,
     "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": true,
-    "createStartMenuShortcut": true
+    "createDesktopShortcut": "always",
+    "createStartMenuShortcut": true,
+    "runAfterFinish": true,
+    "installerIcon": "build/windows/installer.ico",
+    "uninstallerIcon": "build/windows/uninstaller.ico",
+    "installerHeaderIcon": "build/windows/header.ico"
   }
 }
