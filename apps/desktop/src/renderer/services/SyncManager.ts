@@ -24,7 +24,7 @@ const DEFAULT_CONFIG: SyncManagerConfig = {
   maxRetries: 3,
   retryDelayMs: 1000,
   batchSize: 10,
-  conflictStrategy: "CLIENT_WINS",
+  conflictStrategy: "SERVER_WINS",
 };
 
 export class SyncManager {

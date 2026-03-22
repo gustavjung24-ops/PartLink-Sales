@@ -16,6 +16,10 @@ import { useEffect } from "react";
 import { SyncQueueItem, MachineContext } from "@sparelink/shared";
 
 /**
+ * Flag to track if sync is in progress (prevents duplicate triggers)
+ */
+let syncInProgress = false;
+/**
  * Offline Store State & Actions
  */
 export interface OfflineStore {
@@ -79,7 +83,23 @@ export const useOfflineStore = create<OfflineStore>()(
 
         if (online) {
           console.log("[Offline Store] Connection restored - attempting sync");
-          // TODO: Trigger sync when coming online
+          // Trigger sync using setTimeout to delay until next macro task
+          // This allows React hooks to be safely called in components watching isOnline
+          if (!syncInProgress) {
+            syncInProgress = true;
+            setTimeout(async () => {
+              try {
+                // Import lazily to avoid circular dependencies
+                const { useSyncManager } = await import("../services/SyncManager");
+                const syncManager = useSyncManager();
+                await syncManager.forceSyncNow();
+              } catch (error) {
+                console.error("[Offline Store] Sync failed:", error);
+              } finally {
+                syncInProgress = false;
+              }
+            }, 0);
+          }
         }
       },
 

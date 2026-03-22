@@ -77,6 +77,13 @@ export function MainLayout(): JSX.Element {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const withCommand = event.metaKey || event.ctrlKey;
+      
+      // Don't trigger shortcuts if typing in input/textarea
+      const target = event.target as HTMLElement;
+      const tagName = target.tagName.toUpperCase();
+      if (tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable) {
+        return;
+      }
 
       if (withCommand && key === "k") {
         event.preventDefault();

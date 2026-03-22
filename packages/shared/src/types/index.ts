@@ -7,6 +7,16 @@
  * Result type indicating success or failure of an operation
  */
 export enum ResultType {
+  /**
+   * Part source type for search results with color indicators
+   */
+  export enum PartSourceType {
+    COMPANY_AVAILABLE = "COMPANY_AVAILABLE",        // 🟢 In stock
+    COMPANY_ORDERABLE = "COMPANY_ORDERABLE",        // 🟢 Can order
+    INTERNAL_REPLACEMENT = "INTERNAL_REPLACEMENT",  // 🔵 Internal equivalent
+    AI_SUGGESTED_EXTERNAL = "AI_SUGGESTED_EXTERNAL", // 🟠 AI/API suggested
+  }
+
   SUCCESS = "success",
   ERROR = "error",
   PENDING = "pending",
@@ -44,6 +54,9 @@ export interface SearchResultItem {
   lastUpdated: string;
   imageUrl?: string;
   tags?: string[];
+  sourceType: PartSourceType;
+  confidenceScore?: number;
+  requiresApproval?: boolean;
 }
 
 /**
