@@ -143,6 +143,9 @@ model Activation {
   
   activatedAt   DateTime  @default(now())
   lastValidatedAt DateTime?
+  // Server nonce/challenge to detect client time rollback when validating offline cache
+  serverNonce   String?   @db.Text
+  nonceIssuedAt DateTime? @db.Timestamptz
   expiresAt     DateTime  // 30 days after lastValidated
   
   // Rebinding tracking: only allow limited machine changes
@@ -155,6 +158,7 @@ model Activation {
   
   @@unique([licenseId, machineId])
   @@index([machineId])
+  @@index([nonceIssuedAt])
   @@map("activations")
 }
 

@@ -45,6 +45,8 @@ export interface LicenseData {
   maxDeviceResets: number;            // Device rebinding limit per month
   totalResets: number;                // Total resets done
   lastResetDate?: number;             // Last reset timestamp
+  lastValidatedAt?: number;           // Last successful server validation (server time)
+  nonceIssuedAt?: number;             // Server time when nonce/challenge was issued
 }
 
 /**
@@ -56,6 +58,7 @@ export interface LicenseValidationResponse {
   licenseData: LicenseData;
   serverTime: number;                 // Server time for clock-skew detection
   nonce: string;                      // Challenge token for next validation
+  nonceIssuedAt: number;              // Server-issued nonce timestamp (UTC epoch ms)
   graceExpiresAt?: number;            // When grace period ends (if any)
   message?: string;                   // Human-readable message
 }

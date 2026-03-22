@@ -28,6 +28,7 @@ export class LicenseApiService {
   private apiBaseUrl: string;
   private lastValidation: CachedValidation | null = null;
   private clockSkewThresholdMs = 5 * 60 * 1000; // 5 minutes
+  private clockRollbackToleranceMs = 2 * 60 * 1000; // 2 minutes
   private lastServerNonce: string | null = null;
 
   constructor(apiBaseUrl: string = "http://localhost:3000") {
@@ -64,7 +65,12 @@ export class LicenseApiService {
         throw new Error(error.error?.message || `Activation failed: ${response.statusText}`);
       }
 
-      const data = (await response.json()) as LicenseValidationResponse;
+      const raw = (await response.json()) as { data?: LicenseValidationResponse } | LicenseValidationResponse;
+      const data = ("data" in raw ? raw.data : raw) as LicenseValidationResponse;
+
+      if (!data || !data.licenseData) {
+        throw new Error("Activation response malformed");
+      }
 
       // Cache response
       this.lastValidation = {
@@ -116,7 +122,12 @@ export class LicenseApiService {
         throw new Error(error.error?.message || `Validation failed: ${response.statusText}`);
       }
 
-      const data = (await response.json()) as LicenseValidationResponse;
+      const raw = (await response.json()) as { data?: LicenseValidationResponse } | LicenseValidationResponse;
+      const data = ("data" in raw ? raw.data : raw) as LicenseValidationResponse;
+
+      if (!data || !data.licenseData) {
+        throw new Error("Validation response malformed");
+      }
 
       // Check for clock skew
       const skewResult = this.detectClockSkew(clientTime, data.serverTime);
@@ -153,8 +164,8 @@ export class LicenseApiService {
     } catch (error) {
       console.error("[License API] Validation failed:", error);
 
-      // If offline, return cached response if available
-      if (this.lastValidation) {
+      // If offline, return cached response only when anti-rollback check passes
+      if (this.lastValidation && this.isGraceValid(this.lastValidation.response)) {
         const cacheAge = Date.now() - this.lastValidation.cachedAt;
         console.log(
           `[License API] Returning cached validation (age: ${(cacheAge / 1000 / 60).toFixed(1)} minutes)`
@@ -162,8 +173,38 @@ export class LicenseApiService {
         return this.lastValidation.response;
       }
 
+      if (this.lastValidation) {
+        throw new Error("Offline grace invalid due to system clock rollback. Online re-validation required.");
+      }
+
       throw error;
     }
+  }
+
+  /**
+   * Anti-clock-rollback guard for offline grace usage.
+   * If client time is earlier than server-issued nonce time (minus tolerance),
+   * treat as potential time manipulation and invalidate cached grace.
+   */
+  private isGraceValid(validation: LicenseValidationResponse): boolean {
+    const clientNow = Date.now();
+    const nonceIssuedAt = validation.nonceIssuedAt ?? validation.licenseData.nonceIssuedAt;
+
+    if (!nonceIssuedAt) {
+      // Backward compatibility with old tokens: allow but log for visibility.
+      console.warn("[License API] nonceIssuedAt missing in cached token; skipping rollback guard.");
+      return true;
+    }
+
+    if (clientNow < nonceIssuedAt - this.clockRollbackToleranceMs) {
+      console.error("[License API] Clock rollback detected in offline mode", {
+        clientNow,
+        nonceIssuedAt,
+      });
+      return false;
+    }
+
+    return clientNow < validation.licenseData.expiresAt;
   }
 
   /**
@@ -247,6 +288,10 @@ export class LicenseApiService {
     // 24 hours default
     if (!this.lastValidation) return false;
 
+    if (!this.isGraceValid(this.lastValidation.response)) {
+      return false;
+    }
+
     const cacheAge = Date.now() - this.lastValidation.cachedAt;
     return cacheAge < gracePeriodMs;
   }
@@ -255,10 +300,10 @@ export class LicenseApiService {
    * Offline mode: returns cached validation if available
    */
   async getOfflineLicense(): Promise<LicenseValidationResponse> {
-    if (this.lastValidation) {
+    if (this.lastValidation && this.isGraceValid(this.lastValidation.response)) {
       return this.lastValidation.response;
     }
-    throw new Error("No cached license data available. Must activate online first.");
+    throw new Error("No valid cached license data available. Must validate online first.");
   }
 }
 

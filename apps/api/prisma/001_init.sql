@@ -145,6 +145,9 @@ CREATE TABLE activations (
   fingerprint TEXT NOT NULL,
   activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_validated_at TIMESTAMP,
+  -- Server-issued nonce metadata to detect client clock rollback attacks
+  server_nonce TEXT,
+  nonce_issued_at TIMESTAMPTZ,
   expires_at TIMESTAMP NOT NULL,
   rebind_count INT DEFAULT 0,
   rebind_last_at TIMESTAMP,
@@ -155,6 +158,7 @@ CREATE TABLE activations (
 
 CREATE INDEX idx_activations_machine_id ON activations(machine_id);
 CREATE INDEX idx_activations_license_id ON activations(license_id);
+CREATE INDEX idx_activations_nonce_issued_at ON activations(nonce_issued_at);
 
 -- ============================================================================
 -- BUSINESS DATA

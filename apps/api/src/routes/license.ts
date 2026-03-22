@@ -28,6 +28,8 @@ function createNonce(): string {
   return crypto.randomBytes(16).toString("hex");
 }
 
+const CLOCK_TOLERANCE_MS = 2 * 60 * 1000;
+
 function mapLicenseState(status: string, isTrial: boolean): LicenseState {
   if (isTrial && status !== "REVOKED") {
     return LicenseState.TRIAL;
@@ -55,6 +57,19 @@ async function buildValidationResponse(key: string, machineId: string, message?:
 
   const activation = license.activations.find((item) => item.machineId === machineId) ?? license.activations[0] ?? null;
   const expiresAt = license.expiryDate ?? license.trialEndDate ?? activation?.expiresAt ?? license.createdAt;
+  const nonce = createNonce();
+  const nonceIssuedAt = new Date();
+
+  if (activation) {
+    await prisma.activation.update({
+      where: { id: activation.id },
+      data: {
+        serverNonce: nonce,
+        nonceIssuedAt,
+        lastValidatedAt: nonceIssuedAt,
+      } as any,
+    });
+  }
 
   return {
     success: true,
@@ -71,9 +86,12 @@ async function buildValidationResponse(key: string, machineId: string, message?:
       maxDeviceResets: 2,
       totalResets: activation?.rebindCount ?? 0,
       lastResetDate: activation?.rebindLastAt?.getTime(),
+      lastValidatedAt: nonceIssuedAt.getTime(),
+      nonceIssuedAt: nonceIssuedAt.getTime(),
     },
     serverTime: Date.now(),
-    nonce: createNonce(),
+    nonce,
+    nonceIssuedAt: nonceIssuedAt.getTime(),
     message,
   };
 }
@@ -103,6 +121,36 @@ export async function registerLicenseRoutes(fastify: FastifyInstance): Promise<v
     const validation = validateRequiredFields(request.body as unknown as Record<string, unknown>, ["key", "deviceFingerprint", "lastNonce", "clientTime"]);
     if (validation) {
       return reply.code(400).send(apiError(ApiErrorCode.MISSING_REQUIRED_FIELD, validation));
+    }
+
+    const license = await licenseRepository.findByKey(request.body.key);
+    if (!license) {
+      return reply.code(404).send(apiError(ApiErrorCode.NOT_FOUND, "License not found"));
+    }
+
+    const activation = license.activations.find((item) => item.machineId === request.body.deviceFingerprint.machineId);
+    if (!activation) {
+      return reply.code(401).send(apiError(ApiErrorCode.UNAUTHORIZED, "Device not activated for this license"));
+    }
+
+    const activationToken = activation as typeof activation & {
+      serverNonce?: string | null;
+      nonceIssuedAt?: Date | null;
+    };
+
+    if (activationToken.serverNonce && request.body.lastNonce !== activationToken.serverNonce) {
+      return reply
+        .code(401)
+        .send(apiError(ApiErrorCode.UNAUTHORIZED, "Invalid validation challenge. Please re-activate online."));
+    }
+
+    if (
+      activationToken.nonceIssuedAt &&
+      request.body.clientTime < activationToken.nonceIssuedAt.getTime() - CLOCK_TOLERANCE_MS
+    ) {
+      return reply
+        .code(401)
+        .send(apiError(ApiErrorCode.UNAUTHORIZED, "System clock rollback detected. Online re-validation required."));
     }
 
     const result = await licenseService.validateLicense(request.body.key, request.body.deviceFingerprint.machineId);
