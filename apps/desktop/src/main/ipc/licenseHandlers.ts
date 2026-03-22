@@ -5,6 +5,7 @@
  * All handlers use withErrorHandling wrapper for standardized responses
  */
 
+import { ipcMain } from "electron";
 import { withErrorHandling } from "./utils";
 import { deviceFingerprintService } from "../services/fingerprint";
 import { licenseStateManager } from "../services/license";
@@ -145,6 +146,6 @@ export function registerLicenseHandlers(): void {
  */
 export function unregisterLicenseHandlers(): void {
   Object.values(IPC_LICENSE_CHANNELS).forEach((channel) => {
-    // Note: ipcMain.removeHandler() is called elsewhere
+    ipcMain.removeHandler(channel);
   });
 }

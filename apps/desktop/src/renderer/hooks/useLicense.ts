@@ -112,8 +112,10 @@ export function useLicense(): UseLicenseReturn {
 
       setLicense(response.licenseData);
       setState(response.status);
-      setIsValid(response.status !== LicenseStateEnum.EXPIRED &&
-                 response.status !== LicenseStateEnum.SUSPENDED);
+      setIsValid(
+        response.status === LicenseStateEnum.ACTIVE ||
+        response.status === LicenseStateEnum.TRIAL
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Validation failed";
       setError(message);

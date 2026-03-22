@@ -9,7 +9,7 @@ import {
   type AppInfo,
   type WindowState
 } from "@/shared/electronApi";
-import { registerLicenseHandlers } from "./licenseHandlers";
+import { registerLicenseHandlers, unregisterLicenseHandlers } from "./licenseHandlers";
 import { withErrorHandling } from "./utils";
 
 /**
@@ -158,6 +158,8 @@ export function registerIpcHandlers(isVerbose: boolean): void {
 }
 
 export function unregisterIpcHandlers(): void {
+  unregisterLicenseHandlers();
+
   // Flatten nested IPC_CHANNELS structure
   const allChannels = Object.values(IPC_CHANNELS).flatMap(group =>
     typeof group === "object" ? Object.values(group) : group
