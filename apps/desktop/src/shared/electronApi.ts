@@ -22,7 +22,7 @@ export interface FileWritePayload {
 export interface AppInfo {
   name: string;
   version: string;
-  platform: "linux" | "darwin" | "win32";
+  platform: string;
   isPackaged: boolean;
 }
 

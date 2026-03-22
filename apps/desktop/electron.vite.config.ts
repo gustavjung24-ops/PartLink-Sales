@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "src")
+      }
+    },
     build: {
       outDir: "dist/main",
       rollupOptions: {
@@ -15,6 +20,11 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: {
+        "@": resolve(__dirname, "src")
+      }
+    },
     build: {
       outDir: "dist/preload",
       rollupOptions: {
@@ -25,17 +35,23 @@ export default defineConfig({
     }
   },
   renderer: {
+    root: ".",
     resolve: {
       alias: {
         "@": resolve(__dirname, "src")
       }
     },
     build: {
-      outDir: "dist/renderer"
+      outDir: "dist/renderer",
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, "index.html")
+        }
+      }
     },
     server: {
       port: 5173,
-      strictPort: true
+      strictPort: false
     }
   }
 });

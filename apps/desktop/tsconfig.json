@@ -4,6 +4,8 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "jsx": "react-jsx",
+    "declaration": false,
+    "declarationMap": false,
     "types": ["node", "vite/client"],
     "paths": {
       "@/*": ["./src/*"],
