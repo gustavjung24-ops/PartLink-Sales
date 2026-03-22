@@ -245,14 +245,17 @@ CREATE INDEX idx_product_mappings_confidence ON product_mappings(confidence);
 CREATE TABLE mapping_revisions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   mapping_id UUID NOT NULL,
-  revision SMALLINT NOT NULL,
+  -- Option A: GENERATED ALWAYS AS IDENTITY bảo đảm atomic increment,
+  -- tránh race condition khi dùng MAX(revision) + 1 trong môi trường concurrent.
+  revision INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
   snapshot JSONB DEFAULT '{}' NOT NULL,
   changed_by VARCHAR(255),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (mapping_id) REFERENCES product_mappings(id) ON DELETE CASCADE
+  FOREIGN KEY (mapping_id) REFERENCES product_mappings(id) ON DELETE CASCADE,
+  CONSTRAINT uq_mapping_revisions_mapping_revision UNIQUE (mapping_id, revision)
 );
 
-CREATE INDEX idx_mapping_revisions_mapping_id_revision ON mapping_revisions(mapping_id, revision);
+CREATE INDEX idx_mapping_revisions_mapping_id ON mapping_revisions(mapping_id);
 
 CREATE TABLE quotes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -478,8 +481,10 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION record_product_mapping_revision()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO mapping_revisions (mapping_id, revision, snapshot, changed_by)
-  VALUES (NEW.id, NEW.revision, to_jsonb(NEW), NEW.approved_by);
+  -- revision bị loại khỏi INSERT: GENERATED ALWAYS AS IDENTITY tự sinh giá trị,
+  -- loại bỏ hoàn toàn nguy cơ duplicate revision_no khi 2 transaction chạy đồng thời.
+  INSERT INTO mapping_revisions (mapping_id, snapshot, changed_by)
+  VALUES (NEW.id, to_jsonb(NEW), NEW.approved_by);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

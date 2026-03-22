@@ -293,15 +293,17 @@ model ProductMapping {
 
 model ProductMappingRevision {
   id            String    @id @default(uuid()) @db.Uuid
-  mappingId      String    @db.Uuid
-  revision       Int       @db.SmallInt
-  snapshot       Json      @default("{}")
-  changedBy      String?   @db.VarChar(255)
-  createdAt      DateTime  @default(now())
+  mappingId     String    @db.Uuid
+  /// GENERATED ALWAYS AS IDENTITY — atomic sequence, không thể bị duplicate
+  /// dù 2 transaction approve đồng thời. Giá trị do DB tự sinh, không set thủ công.
+  revision      Int       @default(autoincrement())
+  snapshot      Json      @default("{}")
+  changedBy     String?   @db.VarChar(255)
+  createdAt     DateTime  @default(now())
 
-  mapping        ProductMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  mapping       ProductMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
 
-  @@index([mappingId, revision])
+  @@unique([mappingId, revision])
   @@map("mapping_revisions")
 }
 
