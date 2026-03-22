@@ -269,7 +269,7 @@ model ProductMapping {
   aiPrompt      String?   @db.Text
   
   // Revision tracking
-  revision      Int       @default(1) @db.SmallInt
+  revision      Int       @default(1)
   status        String    @default("PENDING") // PENDING, APPROVED, REJECTED, SUPERSEDED
   rejectionReason String? @db.Text
   
@@ -296,6 +296,8 @@ model ProductMappingRevision {
   mappingId     String    @db.Uuid
   /// GENERATED ALWAYS AS IDENTITY — atomic sequence, không thể bị duplicate
   /// dù 2 transaction approve đồng thời. Giá trị do DB tự sinh, không set thủ công.
+  /// NOTE: revision là global sequence, KHÔNG sequential per-mapping.
+  /// Dùng thứ tự revision hoặc createdAt để xác định version mới nhất của mapping.
   revision      Int       @default(autoincrement())
   snapshot      Json      @default("{}")
   changedBy     String?   @db.VarChar(255)

@@ -226,7 +226,7 @@ CREATE TABLE product_mappings (
   requires_approval BOOLEAN DEFAULT FALSE,
   ai_model VARCHAR(100),
   ai_prompt TEXT,
-  revision SMALLINT NOT NULL DEFAULT 1,
+  revision INTEGER NOT NULL DEFAULT 1,
   status VARCHAR(50) DEFAULT 'PENDING',
   rejection_reason TEXT,
   submitted_by VARCHAR(255),
@@ -247,6 +247,9 @@ CREATE TABLE mapping_revisions (
   mapping_id UUID NOT NULL,
   -- Option A: GENERATED ALWAYS AS IDENTITY bảo đảm atomic increment,
   -- tránh race condition khi dùng MAX(revision) + 1 trong môi trường concurrent.
+  -- NOTE: revision là global sequence, KHÔNG sequential per-mapping.
+  -- Ví dụ: mapping_A có thể có revision 1, 5, 9; mapping_B có 2, 3, 4, 6, 7, 8.
+  -- Dùng thứ tự revision hoặc created_at để xác định version mới nhất của mapping.
   revision INTEGER NOT NULL GENERATED ALWAYS AS IDENTITY,
   snapshot JSONB DEFAULT '{}' NOT NULL,
   changed_by VARCHAR(255),
@@ -504,9 +507,28 @@ CREATE TRIGGER update_import_row_staging_timestamp BEFORE UPDATE ON import_row_s
 CREATE TRIGGER update_approvals_timestamp BEFORE UPDATE ON approvals FOR EACH ROW EXECUTE FUNCTION update_timestamp();
 CREATE TRIGGER update_industry_attribute_defs_timestamp BEFORE UPDATE ON industry_attribute_defs FOR EACH ROW EXECUTE FUNCTION update_timestamp();
 
-CREATE TRIGGER increment_product_mapping_revision_trigger BEFORE UPDATE ON product_mappings FOR EACH ROW EXECUTE FUNCTION increment_product_mapping_revision();
-CREATE TRIGGER record_product_mapping_revision_insert AFTER INSERT ON product_mappings FOR EACH ROW EXECUTE FUNCTION record_product_mapping_revision();
-CREATE TRIGGER record_product_mapping_revision_update AFTER UPDATE ON product_mappings FOR EACH ROW EXECUTE FUNCTION record_product_mapping_revision();
+-- Bump product_mappings.revision chỉ khi trường nghiệp vụ thực sự thay đổi
+CREATE TRIGGER increment_product_mapping_revision_trigger
+  BEFORE UPDATE OF status, confidence, approved_by, rejection_reason ON product_mappings
+  FOR EACH ROW
+  WHEN (OLD.status IS DISTINCT FROM NEW.status
+     OR OLD.confidence IS DISTINCT FROM NEW.confidence
+     OR OLD.approved_by IS DISTINCT FROM NEW.approved_by)
+  EXECUTE FUNCTION increment_product_mapping_revision();
+
+CREATE TRIGGER record_product_mapping_revision_insert
+  AFTER INSERT ON product_mappings
+  FOR EACH ROW EXECUTE FUNCTION record_product_mapping_revision();
+
+-- Ghi history chỉ khi trường nghiệp vụ thực sự thay đổi;
+-- tránh tạo revision rác khi update_timestamp() cập nhật updated_at.
+CREATE TRIGGER record_product_mapping_revision_update
+  AFTER UPDATE OF status, confidence, approved_by, rejection_reason ON product_mappings
+  FOR EACH ROW
+  WHEN (OLD.status IS DISTINCT FROM NEW.status
+     OR OLD.confidence IS DISTINCT FROM NEW.confidence
+     OR OLD.approved_by IS DISTINCT FROM NEW.approved_by)
+  EXECUTE FUNCTION record_product_mapping_revision();
 
 -- Normalize product codes
 CREATE OR REPLACE FUNCTION normalize_product_code()
