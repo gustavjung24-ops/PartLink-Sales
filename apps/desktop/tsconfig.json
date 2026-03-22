@@ -3,6 +3,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "baseUrl": ".",
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
     "paths": {
       "@/*": ["./src/*"],
       "@sparelink/shared": ["../../packages/shared/dist/index.js"],
@@ -10,8 +12,5 @@
     }
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules"],
-  "references": [
-    { "path": "../../packages/shared" }
-  ]
+  "exclude": ["dist", "node_modules"]
 }

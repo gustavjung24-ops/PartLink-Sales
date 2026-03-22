@@ -1,0 +1,100 @@
+import { app, BrowserWindow } from "electron";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { IPC_CHANNELS } from "@/shared/electronApi";
+import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc/handlers";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let mainWindow: BrowserWindow | null = null;
+
+function getPreloadPath(): string {
+  return path.join(__dirname, "../preload/index.js");
+}
+
+function getRendererEntry(): string {
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+    return process.env.ELECTRON_RENDERER_URL;
+  }
+
+  return fileURLToPath(new URL("../renderer/index.html", import.meta.url));
+}
+
+function createMainWindow(): BrowserWindow {
+  const browserWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 640,
+    show: false,
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  browserWindow.once("ready-to-show", () => {
+    browserWindow.show();
+  });
+
+  const sendWindowState = () => {
+    browserWindow.webContents.send(IPC_CHANNELS.WINDOW_STATE_CHANGED, {
+      isMaximized: browserWindow.isMaximized(),
+      isMinimized: browserWindow.isMinimized()
+    });
+  };
+
+  browserWindow.on("maximize", sendWindowState);
+  browserWindow.on("unmaximize", sendWindowState);
+  browserWindow.on("minimize", sendWindowState);
+  browserWindow.on("restore", sendWindowState);
+
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+    browserWindow.loadURL(getRendererEntry());
+  } else {
+    browserWindow.loadFile(getRendererEntry());
+  }
+
+  return browserWindow;
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) {
+      return;
+    }
+
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
+    registerIpcHandlers(process.env.DEBUG_IPC === "true");
+    mainWindow = createMainWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createMainWindow();
+      }
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+
+  app.on("before-quit", () => {
+    unregisterIpcHandlers();
+  });
+}
