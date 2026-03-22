@@ -1,13 +1,17 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/button";
 import { useAuthStore } from "../../stores/authStore";
 
 const EMAIL_HINT = "user@sparelink.local";
 
+/** Guard demo credentials so hardcoded values never ship in production builds. */
+const isDev = import.meta.env.DEV;
+
 export function LoginScreen(): JSX.Element {
   const navigate = useNavigate();
 
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const login = useAuthStore((state) => state.login);
   const requestPasswordReset = useAuthStore((state) => state.requestPasswordReset);
   const redirectAfterLogin = useAuthStore((state) => state.redirectAfterLogin);
@@ -16,12 +20,19 @@ export function LoginScreen(): JSX.Element {
   const warning = useAuthStore((state) => state.lastSessionWarning);
   const clearError = useAuthStore((state) => state.clearError);
 
-  const [email, setEmail] = useState(EMAIL_HINT);
-  const [password, setPassword] = useState("Password@123");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [email, setEmail] = useState(isDev ? EMAIL_HINT : "");
+  const [password, setPassword] = useState(isDev ? "Password@123" : "");
+  const [rememberMe, setRememberMe] = useState(false);
   const [isForgotFlow, setIsForgotFlow] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState(EMAIL_HINT);
+  const [forgotEmail, setForgotEmail] = useState(isDev ? EMAIL_HINT : "");
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+
+  // Redirect already-authenticated users away from /login
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(redirectAfterLogin || "/dashboard", { replace: true });
+    }
+  }, [isAuthenticated, navigate, redirectAfterLogin]);
 
   const submitLabel = useMemo(() => (isLoading ? "Đang xử lý..." : "Đăng nhập"), [isLoading]);
 
@@ -98,7 +109,7 @@ export function LoginScreen(): JSX.Element {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => { setEmail(event.target.value); clearError(); }}
                 required
               />
             </label>
@@ -110,7 +121,7 @@ export function LoginScreen(): JSX.Element {
                 type="password"
                 autoComplete="current-password"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => { setPassword(event.target.value); clearError(); }}
                 required
               />
             </label>
@@ -159,9 +170,11 @@ export function LoginScreen(): JSX.Element {
             ) : null}
           </div>
 
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Demo: user@sparelink.local | senior@sparelink.local | admin@sparelink.local | super@sparelink.local
-          </p>
+          {isDev ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Demo: user@sparelink.local | senior@sparelink.local | admin@sparelink.local | super@sparelink.local
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

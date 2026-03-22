@@ -97,7 +97,12 @@ export function registerIpcHandlers(isVerbose: boolean): void {
   withErrorHandling<AuthSession, void>(
     IPC_CHANNELS_LEGACY.AUTH_SAVE_SESSION,
     async (_event, payload) => {
-      await secureSessionStore.saveSession(payload);
+      // Look up the refresh token expiry that was recorded when the token was issued.
+      // Falls back to 7 days from now when called during bootstrap refresh (Map already restored).
+      const refreshTokenExpiry =
+        authService.getRefreshTokenExpiry(payload.refreshToken) ??
+        Date.now() + 7 * 24 * 60 * 60 * 1000;
+      await secureSessionStore.saveSession(payload, refreshTokenExpiry);
     }
   );
 

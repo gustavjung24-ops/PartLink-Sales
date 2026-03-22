@@ -56,7 +56,11 @@ export function MainLayout(): JSX.Element {
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [accessWarning, setAccessWarning] = useState<string | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  // Pick up lastSessionWarning from store (set by RoleGuard / logout reason)
+  const lastSessionWarning = useAuthStore((state) => state.lastSessionWarning);
 
   const visibleNavItems = useMemo(
     () => navItems.filter((item) => canAccess(roles, item.roles)),
@@ -104,6 +108,16 @@ export function MainLayout(): JSX.Element {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Show session/access warnings as a timed banner in the main content area
+  useEffect(() => {
+    if (lastSessionWarning) {
+      setAccessWarning(lastSessionWarning);
+      useAuthStore.setState({ lastSessionWarning: null });
+      const timer = setTimeout(() => setAccessWarning(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastSessionWarning]);
 
   // Close sidebar when route changes (mobile nav)
   useEffect(() => {
@@ -259,6 +273,12 @@ export function MainLayout(): JSX.Element {
         </header>
 
         <main className="p-4 md:p-6">
+          {accessWarning ? (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-200">
+              <span>{accessWarning}</span>
+              <button type="button" className="ml-4 text-amber-600 hover:text-amber-800 dark:text-amber-300" onClick={() => setAccessWarning(null)}>✕</button>
+            </div>
+          ) : null}
           <Outlet />
         </main>
       </div>

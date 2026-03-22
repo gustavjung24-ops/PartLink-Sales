@@ -6,6 +6,7 @@ import {
   type AuthUser,
   type PasswordResetResult,
 } from "@/shared/electronApi";
+import { secureSessionStore } from "./secureSessionStore";
 
 interface UserRecord {
   id: string;
@@ -75,6 +76,11 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * NOTE: Access token format is a non-cryptographic opaque string for the
+   * desktop IPC layer only — NOT a JWT and NOT compatible with the REST API.
+   * Replace with proper JWT before integrating with the API backend.
+   */
   private issueAccessToken(user: UserRecord): AuthRefreshResult {
     const issuedAt = Date.now();
     const expiresAt = issuedAt + ACCESS_TOKEN_TTL_MS;
@@ -98,6 +104,11 @@ export class AuthService {
     return token;
   }
 
+  /** Returns the expiry (Unix ms) of a refresh token, or null if not registered/expired. */
+  getRefreshTokenExpiry(refreshToken: string): number | null {
+    return this.refreshTokens.get(refreshToken)?.expiresAt ?? null;
+  }
+
   async login(payload: AuthLoginPayload): Promise<AuthLoginResult> {
     const email = payload.email.trim().toLowerCase();
     const user = USERS.find((item) => item.email.toLowerCase() === email);
@@ -119,7 +130,23 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<AuthRefreshResult> {
-    const tokenState = this.refreshTokens.get(refreshToken);
+    let tokenState = this.refreshTokens.get(refreshToken);
+
+    if (!tokenState) {
+      // App may have restarted — the in-memory Map is empty.
+      // Fall back to the securely stored session to validate the token.
+      const stored = await secureSessionStore.loadStoredPayload();
+      if (stored?.session.refreshToken === refreshToken) {
+        const expiry = stored.refreshTokenExpiry ?? 0;
+        if (Date.now() < expiry) {
+          // Trust the securely-stored token; restore it into the Map.
+          const userId = refreshToken.split(".rf.")[0];
+          tokenState = { userId, expiresAt: expiry, revoked: false };
+          this.refreshTokens.set(refreshToken, tokenState);
+        }
+      }
+    }
+
     if (!tokenState || tokenState.revoked) {
       throw new Error("Phiên làm việc không hợp lệ");
     }
