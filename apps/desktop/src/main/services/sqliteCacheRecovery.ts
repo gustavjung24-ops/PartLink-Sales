@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { app } from "electron";
-import { access, copyFile, mkdir, rm } from "node:fs/promises";
+import { access, appendFile, copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 export interface SqliteCacheHealthResult {
@@ -10,6 +10,12 @@ export interface SqliteCacheHealthResult {
   detail?: string;
 }
 
+export interface SyncOverwriteResult {
+  backupPath: string | null;
+  /** ISO-8601 timestamp recorded in the audit log. */
+  loggedAt: string;
+}
+
 export class SqliteCacheRecoveryService {
   private readonly databasePath =
     process.env.SPARELINK_SQLITE_CACHE_PATH
@@ -17,6 +23,7 @@ export class SqliteCacheRecoveryService {
 
   private readonly backupDir = path.join(app.getPath("userData"), "cache", "backups");
   private readonly quarantineDir = path.join(app.getPath("userData"), "cache", "corrupt");
+  private readonly auditLogPath = path.join(app.getPath("userData"), "cache", "sync-audit.log");
 
   getDatabasePath(): string {
     return this.databasePath;
@@ -79,7 +86,25 @@ export class SqliteCacheRecoveryService {
     }
   }
 
-  async backupBeforeOverwrite(reason: string = "sync-overwrite"): Promise<string | null> {
+  /**
+   * Back up the current SQLite cache before a sync overwrite replaces it with
+   * server data.  The conflict resolution strategy is **server wins**: the
+   * authoritative server state always replaces the local cache.  A pre-overwrite
+   * backup is kept so a fallback is available if the new data fails integrity
+   * checks.  Every call is appended to the sync audit log for traceability.
+   *
+   * @param reason  Short label describing why the overwrite is happening
+   *                (e.g. "sync-overwrite", "force-refresh").
+   * @returns       The path of the backup file and the log timestamp.
+   */
+  async backupBeforeOverwrite(reason: string = "sync-overwrite"): Promise<SyncOverwriteResult> {
+    const loggedAt = new Date().toISOString();
+    const backupPath = await this._createBackup(reason);
+    await this._appendSyncAuditLog(reason, backupPath, loggedAt);
+    return { backupPath, loggedAt };
+  }
+
+  private async _createBackup(reason: string): Promise<string | null> {
     const exists = await this.fileExists(this.databasePath);
     if (!exists) {
       return null;
@@ -93,6 +118,31 @@ export class SqliteCacheRecoveryService {
 
     await copyFile(this.databasePath, targetPath);
     return targetPath;
+  }
+
+  /**
+   * Append a structured line to the sync audit log so overwrite events can be
+   * traced during incident investigation.
+   */
+  private async _appendSyncAuditLog(
+    reason: string,
+    backupPath: string | null,
+    timestamp: string,
+  ): Promise<void> {
+    const line = JSON.stringify({
+      event: "sync-overwrite",
+      reason,
+      backupPath,
+      timestamp,
+      databasePath: this.databasePath,
+    }) + "\n";
+    try {
+      await mkdir(path.dirname(this.auditLogPath), { recursive: true });
+      await appendFile(this.auditLogPath, line, { encoding: "utf8" });
+    } catch (error) {
+      // Non-fatal: logging failure must not block the sync operation.
+      console.error("[SqliteCacheRecovery] Sync audit log write failed:", error);
+    }
   }
 
   private async quarantineDatabase(reason: string): Promise<string | null> {

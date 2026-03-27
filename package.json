@@ -13,6 +13,7 @@
     "build": "pnpm --filter @sparelink/shared build && pnpm -r --filter './apps/*' build",
     "build:desktop-installer": "node ./scripts/build-installer.js",
     "backup:postgres:base": "bash infra/backup/postgres/backup-base.sh",
+    "backup:postgres:logical": "bash infra/backup/postgres/backup-logical.sh",
     "backup:postgres:verify": "bash infra/backup/postgres/verify-backup.sh",
     "backup:postgres:prune": "bash infra/backup/postgres/prune-old-backups.sh",
     "backup:postgres:restore:pitr": "bash infra/backup/postgres/restore-pitr.sh",
