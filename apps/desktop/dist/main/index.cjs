@@ -5,7 +5,6 @@ const path = require("node:path");
 const promises = require("node:fs/promises");
 const crypto = require("crypto");
 const os = require("os");
-const shared = require("@sparelink/shared");
 const crypto$1 = require("node:crypto");
 const Database = require("better-sqlite3");
 const electronUpdater = require("electron-updater");
@@ -228,25 +227,48 @@ class DeviceFingerprintService {
   }
 }
 const deviceFingerprintService = new DeviceFingerprintService();
+var LicenseState;
+(function(LicenseState2) {
+  LicenseState2["NO_LICENSE"] = "NO_LICENSE";
+  LicenseState2["TRIAL"] = "TRIAL";
+  LicenseState2["ACTIVE"] = "ACTIVE";
+  LicenseState2["EXPIRED"] = "EXPIRED";
+  LicenseState2["SUSPENDED"] = "SUSPENDED";
+  LicenseState2["DEACTIVATED"] = "DEACTIVATED";
+})(LicenseState || (LicenseState = {}));
+var PartSourceType;
+(function(PartSourceType2) {
+  PartSourceType2["COMPANY_AVAILABLE"] = "COMPANY_AVAILABLE";
+  PartSourceType2["COMPANY_ORDERABLE"] = "COMPANY_ORDERABLE";
+  PartSourceType2["INTERNAL_REPLACEMENT"] = "INTERNAL_REPLACEMENT";
+  PartSourceType2["AI_SUGGESTED_EXTERNAL"] = "AI_SUGGESTED_EXTERNAL";
+})(PartSourceType || (PartSourceType = {}));
+var ResultType;
+(function(ResultType2) {
+  ResultType2["SUCCESS"] = "success";
+  ResultType2["ERROR"] = "error";
+  ResultType2["PENDING"] = "pending";
+  ResultType2["CACHED"] = "cached";
+})(ResultType || (ResultType = {}));
 const STATE_TRANSITIONS = {
-  [shared.LicenseState.NO_LICENSE]: [shared.LicenseState.TRIAL, shared.LicenseState.ACTIVE],
-  [shared.LicenseState.TRIAL]: [shared.LicenseState.ACTIVE, shared.LicenseState.EXPIRED, shared.LicenseState.NO_LICENSE],
-  [shared.LicenseState.ACTIVE]: [
-    shared.LicenseState.EXPIRED,
-    shared.LicenseState.SUSPENDED,
-    shared.LicenseState.DEACTIVATED
+  [LicenseState.NO_LICENSE]: [LicenseState.TRIAL, LicenseState.ACTIVE],
+  [LicenseState.TRIAL]: [LicenseState.ACTIVE, LicenseState.EXPIRED, LicenseState.NO_LICENSE],
+  [LicenseState.ACTIVE]: [
+    LicenseState.EXPIRED,
+    LicenseState.SUSPENDED,
+    LicenseState.DEACTIVATED
   ],
-  [shared.LicenseState.EXPIRED]: [
-    shared.LicenseState.ACTIVE,
-    shared.LicenseState.SUSPENDED,
-    shared.LicenseState.NO_LICENSE
+  [LicenseState.EXPIRED]: [
+    LicenseState.ACTIVE,
+    LicenseState.SUSPENDED,
+    LicenseState.NO_LICENSE
   ],
-  [shared.LicenseState.SUSPENDED]: [
-    shared.LicenseState.ACTIVE,
-    shared.LicenseState.EXPIRED,
-    shared.LicenseState.NO_LICENSE
+  [LicenseState.SUSPENDED]: [
+    LicenseState.ACTIVE,
+    LicenseState.EXPIRED,
+    LicenseState.NO_LICENSE
   ],
-  [shared.LicenseState.DEACTIVATED]: [shared.LicenseState.NO_LICENSE]
+  [LicenseState.DEACTIVATED]: [LicenseState.NO_LICENSE]
 };
 class LicenseStateManager {
   licenseData = null;
@@ -276,7 +298,7 @@ class LicenseStateManager {
    */
   getCurrentState() {
     if (!this.licenseData) {
-      return shared.LicenseState.NO_LICENSE;
+      return LicenseState.NO_LICENSE;
     }
     return this.licenseData.status;
   }
@@ -286,7 +308,7 @@ class LicenseStateManager {
   isLicenseValid() {
     if (!this.licenseData) return false;
     const state = this.licenseData.status;
-    return state === shared.LicenseState.ACTIVE || state === shared.LicenseState.TRIAL && this.licenseData.expiresAt > Date.now();
+    return state === LicenseState.ACTIVE || state === LicenseState.TRIAL && this.licenseData.expiresAt > Date.now();
   }
   /**
    * Validate and perform state transition
@@ -350,10 +372,10 @@ class LicenseStateManager {
     if (!this.licenseData) return;
     const now = Date.now();
     const state = this.licenseData.status;
-    if (state === shared.LicenseState.ACTIVE && now > this.licenseData.expiresAt && (!this.licenseData.graceUntil || now > this.licenseData.graceUntil)) {
-      this.transitionState(shared.LicenseState.EXPIRED, "License expiration date passed");
+    if (state === LicenseState.ACTIVE && now > this.licenseData.expiresAt && (!this.licenseData.graceUntil || now > this.licenseData.graceUntil)) {
+      this.transitionState(LicenseState.EXPIRED, "License expiration date passed");
     }
-    if (state === shared.LicenseState.EXPIRED && this.licenseData.graceUntil && now <= this.licenseData.graceUntil) {
+    if (state === LicenseState.EXPIRED && this.licenseData.graceUntil && now <= this.licenseData.graceUntil) {
       console.log(
         `[License Manager] In grace period until ${new Date(this.licenseData.graceUntil).toISOString()}`
       );
@@ -364,7 +386,7 @@ class LicenseStateManager {
    */
   suspendLicense(reason = "Server requested suspension") {
     if (!this.licenseData) return;
-    this.transitionState(shared.LicenseState.SUSPENDED, reason);
+    this.transitionState(LicenseState.SUSPENDED, reason);
   }
   /**
    * Deactivate license for device switch
@@ -378,7 +400,7 @@ class LicenseStateManager {
         `[License Manager] Device rebinding limit reached: ${this.licenseData.totalResets}/${this.licenseData.maxDeviceResets}`
       );
     }
-    this.transitionState(shared.LicenseState.DEACTIVATED, "User requested deactivation for device switch");
+    this.transitionState(LicenseState.DEACTIVATED, "User requested deactivation for device switch");
   }
   /**
    * Clear license (remove from this device)
@@ -391,7 +413,7 @@ class LicenseStateManager {
    * Get remaining trial days
    */
   getRemainingTrialDays() {
-    if (!this.licenseData || this.licenseData.status !== shared.LicenseState.TRIAL) {
+    if (!this.licenseData || this.licenseData.status !== LicenseState.TRIAL) {
       return 0;
     }
     const now = Date.now();
@@ -560,9 +582,9 @@ class LicenseApiService {
       } else if (skewResult.severity === "WARNING") {
         console.warn("[License API] Clock skew detected:", skewResult);
       }
-      if (data.status === shared.LicenseState.SUSPENDED) {
+      if (data.status === LicenseState.SUSPENDED) {
         console.warn("[License API] License suspended by server");
-      } else if (data.status === shared.LicenseState.EXPIRED) {
+      } else if (data.status === LicenseState.EXPIRED) {
         console.log("[License API] License expired", {
           graceExpiresAt: data.graceExpiresAt ? new Date(data.graceExpiresAt).toISOString() : "No grace period"
         });

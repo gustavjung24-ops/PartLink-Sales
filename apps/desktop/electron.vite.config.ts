@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["@sparelink/shared"] })],
     resolve: {
       alias: {
         "@": resolve(__dirname, "src")
@@ -19,7 +19,7 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["@sparelink/shared"] })],
     resolve: {
       alias: {
         "@": resolve(__dirname, "src")
