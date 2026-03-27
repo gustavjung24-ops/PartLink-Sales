@@ -1,530 +1,149 @@
 name: Open PR – Partling‑sale WebApp Licensing
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pull-requests: write
-
+on: { workflow_dispatch: {} }
+permissions: { contents: write, pull-requests: write }
 jobs:
   open-pr:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Apply patch (add/overwrite files safely)
+      - name: Apply patch (commit all planned files)
         shell: bash
         run: |
           set -euo pipefail
-
-          mkdir -p apps/desktop/src/main/services .github/workflows
-
-          # 1) electron-builder config (preserve current app structure, add Portable + NSIS)
-          cat > apps/desktop/electron-builder.json << 'EOF'
+          mkdir -p apps/desktop/src/main/services apps/desktop/src/main/ipc apps/desktop/src/renderer/screens/LicenseActivation .github/workflows apps/desktop
+          cat > apps/desktop/electron-builder.json <<'EOF'
           {
             "appId": "com.partling.sale",
             "productName": "Partling-sale",
-            "artifactName": "${productName}-${version}-${arch}.${ext}",
-            "copyright": "Copyright © 2026 PartLink Team",
-            "directories": {
-              "output": "release/${version}",
-              "buildResources": "build"
-            },
-            "files": [
-              "dist/main/**/*",
-              "dist/preload/**/*",
-              "dist/renderer/**/*",
-              "package.json",
-              "!**/*.map",
-              "!**/src/**",
-              "!**/*.ts",
-              "!**/*.tsx"
-            ],
-            "extraResources": [
-              {
-                "from": "build/assets",
-                "to": "assets",
-                "filter": [
-                  "**/*",
-                  "!**/.DS_Store"
-                ]
-              }
-            ],
-            "extraMetadata": {
-              "main": "dist/main/index.cjs"
-            },
             "asar": true,
-            "publish": [
-              {
-                "provider": "generic",
-                "url": "${env.SPARELINK_UPDATE_URL}",
-                "channel": "latest"
-              }
-            ],
-            "win": {
-              "icon": "build/windows/app.ico",
-              "publisherName": "PartLink Team",
-              "verifyUpdateCodeSignature": true,
-              "signAndEditExecutable": true,
-              "requestedExecutionLevel": "asInvoker",
-              "signingHashAlgorithms": [
-                "sha256"
-              ],
-              "rfc3161TimeStampServer": "http://timestamp.digicert.com",
-              "timeStampServer": "http://timestamp.digicert.com",
-              "target": [
-                {
-                  "target": "portable",
-                  "arch": [
-                    "x64"
-                  ]
-                },
-                {
-                  "target": "nsis",
-                  "arch": [
-                    "x64"
-                  ]
-                }
-              ]
-            },
-            "mac": {
-              "target": [
-                {
-                  "target": "dmg",
-                  "arch": [
-                    "x64",
-                    "arm64"
-                  ]
-                },
-                {
-                  "target": "zip",
-                  "arch": [
-                    "x64",
-                    "arm64"
-                  ]
-                }
-              ],
-              "category": "public.app-category.business",
-              "hardenedRuntime": true,
-              "gatekeeperAssess": false,
-              "entitlements": "build/mac/entitlements.mac.plist",
-              "entitlementsInherit": "build/mac/entitlements.mac.inherit.plist",
-              "notarize": {
-                "teamId": "${env.APPLE_TEAM_ID}"
-              }
-            },
-            "nsis": {
-              "oneClick": true,
-              "perMachine": false,
-              "allowElevation": true,
-              "createDesktopShortcut": "always",
-              "createStartMenuShortcut": true,
-              "runAfterFinish": true,
-              "installerIcon": "build/windows/installer.ico",
-              "uninstallerIcon": "build/windows/uninstaller.ico",
-              "installerHeaderIcon": "build/windows/header.ico"
-            }
+            "files": ["dist/**", "node_modules/**", "resources/**", "package.json"],
+            "asarUnpack": ["**/better-sqlite3/**"],
+            "extraResources": [{ "from": "resources/", "to": "resources", "filter": ["**/*"] }],
+            "win": { "target": ["portable", "nsis"], "artifactName": "Partling-sale-${version}-${arch}.${ext}" },
+            "nsis": { "oneClick": true, "perMachine": false, "allowElevation": true, "createDesktopShortcut": true, "createStartMenuShortcut": true }
           }
           EOF
-
-          # 2) Env templates (do not commit real secrets)
-          cat > apps/desktop/.env.example << 'EOF'
-          VITE_LICENSE_WEBAPP_URL=https://script.google.com/macros/s/AKfycbytGuQZ14eGGOVKnORObp04XRZrieh3NsM56OFEbSp4M5cWHk8bXkO4bsza3zjAqf_Q/exec
+          cat > apps/desktop/.env.example <<'EOF'
+          VITE_LICENSE_WEBAPP_URL=${{ vars.LICENSE_WEBAPP_URL || secrets.LICENSE_WEBAPP_URL }}
           VITE_LICENSE_API_KEY=__DEV_ONLY__
-          VITE_LICENSE_SOFTWARE_NAME=Partling-sale
           EOF
-
-          cat > apps/desktop/.env.production << 'EOF'
-          VITE_LICENSE_WEBAPP_URL=https://script.google.com/macros/s/AKfycbytGuQZ14eGGOVKnORObp04XRZrieh3NsM56OFEbSp4M5cWHk8bXkO4bsza3zjAqf_Q/exec
+          cat > apps/desktop/.env.production <<'EOF'
+          VITE_LICENSE_WEBAPP_URL=
           VITE_LICENSE_API_KEY=
-          VITE_LICENSE_SOFTWARE_NAME=Partling-sale
           EOF
-
-          # 3) Replace existing desktop license transport with Apps Script Web App integration.
-          cat > apps/desktop/src/main/services/licenseApi.ts << 'EOF'
-          import crypto from "node:crypto";
-          import type {
-            ClockSkewResult,
-            DeviceDeactivationPayload,
-            DeviceFingerprint,
-            LicenseActivationPayload,
-            LicenseData,
-            LicenseValidationPayload,
-            LicenseValidationResponse
-          } from "@sparelink/shared";
-          import { LicenseState } from "@sparelink/shared";
-
-          interface CachedValidation {
-            response: LicenseValidationResponse;
-            cachedAt: number;
+          cat > apps/desktop/src/main/services/fingerprint.ts <<'EOF'
+          import { machineId } from "node-machine-id";
+          import { createHash } from "crypto";
+          let cached: string | null = null;
+          export async function getHashedMachineId(): Promise<string> {
+            if (cached) return cached;
+            const id = await machineId();
+            cached = createHash("sha256").update(id).digest("hex");
+            return cached;
           }
-
-          interface WebAppEnvelope {
-            ok?: boolean;
-            status?: string;
-            message?: string;
-            data?: Record<string, unknown>;
-          }
-
-          const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
-          const WEBAPP_URL = env.VITE_LICENSE_WEBAPP_URL ?? process.env.LICENSE_WEBAPP_URL ?? process.env.VITE_LICENSE_WEBAPP_URL ?? "";
-          const API_KEY = env.VITE_LICENSE_API_KEY ?? process.env.LICENSE_API_KEY ?? process.env.VITE_LICENSE_API_KEY ?? "";
-          const SOFTWARE_NAME = env.VITE_LICENSE_SOFTWARE_NAME ?? process.env.LICENSE_SOFTWARE_NAME ?? "Partling-sale";
-
-          export class LicenseApiService {
-            private apiBaseUrl: string;
-            private lastValidation: CachedValidation | null = null;
-            private clockSkewThresholdMs = 5 * 60 * 1000;
-            private clockRollbackToleranceMs = 2 * 60 * 1000;
-            private nonceRequiredAfterMs = Date.UTC(2026, 2, 24, 0, 0, 0);
-            private lastServerNonce: string | null = null;
-
-            constructor(apiBaseUrl: string = WEBAPP_URL) {
-              this.apiBaseUrl = apiBaseUrl;
-            }
-
-            restoreNonce(nonce: string | null | undefined): void {
-              this.lastServerNonce = nonce ?? null;
-            }
-
-            async activateLicense(
-              licenseKey: string,
-              fingerprint: DeviceFingerprint
-            ): Promise<LicenseValidationResponse> {
-              if (!licenseKey || !fingerprint) {
-                throw new Error("License key and fingerprint required");
-              }
-
-              const payload: LicenseActivationPayload = {
-                key: licenseKey,
-                deviceFingerprint: fingerprint,
-                clientTime: Date.now()
-              };
-
-              try {
-                const raw = await this.callWebApp("activate", {
-                  licenseKey: payload.key,
-                  machineId: this.getHashedMachineId(payload.deviceFingerprint),
-                  softwareName: SOFTWARE_NAME,
-                  clientTime: payload.clientTime
-                });
-
-                const response = this.toValidationResponse(raw, payload.key, payload.deviceFingerprint, LicenseState.ACTIVE);
-                if (response.status !== LicenseState.ACTIVE && response.status !== LicenseState.TRIAL) {
-                  throw new Error(response.message || "Activation failed");
-                }
-
-                this.cacheResponse(response);
-                return response;
-              } catch (error) {
-                console.error("[License API] Activation failed:", error);
-                throw error;
-              }
-            }
-
-            async validateLicense(
-              licenseKey: string,
-              fingerprint: DeviceFingerprint
-            ): Promise<LicenseValidationResponse> {
-              const clientTime = Date.now();
-              const payload: LicenseValidationPayload = {
-                key: licenseKey,
-                deviceFingerprint: fingerprint,
-                lastNonce: this.lastServerNonce || "",
-                clientTime
-              };
-
-              try {
-                const raw = await this.callWebApp("check", {
-                  licenseKey: payload.key,
-                  machineId: this.getHashedMachineId(payload.deviceFingerprint),
-                  softwareName: SOFTWARE_NAME,
-                  lastNonce: payload.lastNonce,
-                  clientTime: payload.clientTime
-                });
-
-                const response = this.toValidationResponse(raw, payload.key, payload.deviceFingerprint, LicenseState.ACTIVE);
-                const skewResult = this.detectClockSkew(clientTime, response.serverTime);
-                if (skewResult.severity === "CRITICAL") {
-                  throw new Error("System clock appears to be manipulated. License re-authentication required.");
-                }
-
-                this.cacheResponse(response);
-                return response;
-              } catch (error) {
-                console.error("[License API] Validation failed:", error);
-                if (this.lastValidation && this.isGraceValid(this.lastValidation.response)) {
-                  return this.lastValidation.response;
-                }
-
-                if (this.lastValidation) {
-                  throw new Error("Offline grace invalid due to system clock rollback. Online re-validation required.");
-                }
-
-                throw error;
-              }
-            }
-
-            async deactivateLicense(licenseKey: string, deviceId: string): Promise<void> {
-              const payload: DeviceDeactivationPayload = {
-                key: licenseKey,
-                deviceId,
-                reason: "DEVICE_SWITCH"
-              };
-
-              await this.callWebApp("deactivate", {
-                licenseKey: payload.key,
-                machineId: payload.deviceId,
-                softwareName: SOFTWARE_NAME,
-                reason: payload.reason
+          EOF
+          cat > apps/desktop/src/main/services/licenseWebApp.ts <<'EOF'
+          const WEBAPP_URL = (process.env.VITE_LICENSE_WEBAPP_URL as string) || process.env.LICENSE_WEBAPP_URL;
+          const API_KEY   = (process.env.VITE_LICENSE_API_KEY as string)   || process.env.LICENSE_API_KEY;
+          type Status = "OK"|"ACTIVE"|"INVALID"|"BOUND_OTHER"|"ERROR";
+          export interface WebAppResp { ok: boolean; status: Status; message?: string; data?: any; }
+          async function callWebApp(action: "check"|"activate", payload: Record<string,any>): Promise<WebAppResp> {
+            if (!WEBAPP_URL) throw new Error("LICENSE_WEBAPP_URL not set");
+            const c = new AbortController(); const t = setTimeout(()=>c.abort(), 8000);
+            try {
+              const res = await fetch(`${WEBAPP_URL}?action=${encodeURIComponent(action)}`, {
+                method: "POST",
+                headers: { "Content-Type":"application/json", ...(API_KEY?{ "X-Api-Key": API_KEY }: {}) },
+                body: JSON.stringify(payload),
+                signal: c.signal as any
               });
-
-              this.lastValidation = null;
-              this.lastServerNonce = null;
-            }
-
-            getLastValidation(): LicenseValidationResponse | null {
-              return this.lastValidation?.response || null;
-            }
-
-            isCacheValid(gracePeriodMs: number = 24 * 60 * 60 * 1000): boolean {
-              if (!this.lastValidation) {
-                return false;
-              }
-
-              if (!this.isGraceValid(this.lastValidation.response)) {
-                return false;
-              }
-
-              return Date.now() - this.lastValidation.cachedAt < gracePeriodMs;
-            }
-
-            async getOfflineLicense(): Promise<LicenseValidationResponse> {
-              if (this.lastValidation && this.isGraceValid(this.lastValidation.response)) {
-                return this.lastValidation.response;
-              }
-
-              throw new Error("No valid cached license data available. Must validate online first.");
-            }
-
-            private async callWebApp(action: "activate" | "check" | "deactivate", payload: Record<string, unknown>): Promise<WebAppEnvelope> {
-              if (!this.apiBaseUrl) {
-                throw new Error("LICENSE_WEBAPP_URL not set");
-              }
-
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 8000);
-
-              try {
-                const response = await fetch(`${this.apiBaseUrl}?action=${encodeURIComponent(action)}`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    ...(API_KEY ? { "X-Api-Key": API_KEY } : {})
-                  },
-                  body: JSON.stringify(payload),
-                  signal: controller.signal
-                });
-
-                const text = await response.text();
-                let parsed: WebAppEnvelope;
-
-                try {
-                  parsed = JSON.parse(text) as WebAppEnvelope;
-                } catch {
-                  parsed = {
-                    ok: response.ok,
-                    status: response.ok ? "OK" : "ERROR",
-                    message: text,
-                    data: {}
-                  };
-                }
-
-                if (!response.ok || parsed.ok === false) {
-                  throw new Error(parsed.message || `${action} failed: ${response.statusText}`);
-                }
-
-                return parsed;
-              } finally {
-                clearTimeout(timeout);
-              }
-            }
-
-            private cacheResponse(response: LicenseValidationResponse): void {
-              this.lastValidation = {
-                response,
-                cachedAt: Date.now()
-              };
-              this.lastServerNonce = response.nonce;
-              response.licenseData.nonce = response.nonce;
-            }
-
-            private toValidationResponse(
-              raw: WebAppEnvelope,
-              licenseKey: string,
-              fingerprint: DeviceFingerprint,
-              fallbackStatus: LicenseState
-            ): LicenseValidationResponse {
-              const now = Date.now();
-              const data = raw.data ?? {};
-              const status = this.mapStatus(String(raw.status ?? data.status ?? fallbackStatus));
-              const serverTime = this.toTimestamp(data.serverTime, now);
-              const nonceIssuedAt = this.toTimestamp(data.nonceIssuedAt, serverTime);
-              const expiresAt = this.toTimestamp(data.expiresAt ?? data.expiryDate ?? data.expiredAt, now + 365 * 24 * 60 * 60 * 1000);
-              const activatedAt = this.toTimestamp(data.activatedAt, now);
-              const graceUntil = this.toOptionalTimestamp(data.graceUntil ?? data.graceExpiresAt);
-              const deviceId = this.getHashedMachineId(fingerprint);
-              const nonce = this.readString(data.nonce) || this.lastServerNonce || crypto.randomUUID();
-
-              const licenseData: LicenseData = {
-                key: licenseKey,
-                deviceId,
-                status,
-                activatedAt,
-                expiresAt,
-                graceUntil,
-                productName: this.readString(data.productName) || SOFTWARE_NAME,
-                productVersion: this.readString(data.productVersion) || "1.0.0",
-                features: this.toStringArray(data.features),
-                maxDeviceResets: this.toNumber(data.maxDeviceResets, 0),
-                totalResets: this.toNumber(data.totalResets, 0),
-                lastResetDate: this.toOptionalTimestamp(data.lastResetDate),
-                lastValidatedAt: serverTime,
-                nonceIssuedAt,
-                nonce
-              };
-
-              return {
-                success: raw.ok !== false,
-                status,
-                licenseData,
-                serverTime,
-                nonce,
-                nonceIssuedAt,
-                graceExpiresAt: graceUntil,
-                message: raw.message
-              };
-            }
-
-            private getHashedMachineId(fingerprint: DeviceFingerprint): string {
-              return fingerprint.fingerprint;
-            }
-
-            private mapStatus(status: string): LicenseState {
-              switch (status.toUpperCase()) {
-                case "OK":
-                case "ACTIVE":
-                  return LicenseState.ACTIVE;
-                case "TRIAL":
-                  return LicenseState.TRIAL;
-                case "EXPIRED":
-                  return LicenseState.EXPIRED;
-                case "BOUND_OTHER":
-                case "SUSPENDED":
-                  return LicenseState.SUSPENDED;
-                case "DEACTIVATED":
-                  return LicenseState.DEACTIVATED;
-                case "INVALID":
-                case "ERROR":
-                default:
-                  return LicenseState.NO_LICENSE;
-              }
-            }
-
-            private isGraceValid(validation: LicenseValidationResponse): boolean {
-              const clientNow = Date.now();
-              const nonceIssuedAt = validation.nonceIssuedAt ?? validation.licenseData.nonceIssuedAt;
-
-              if (!nonceIssuedAt) {
-                return Date.now() < this.nonceRequiredAfterMs;
-              }
-
-              if (clientNow < nonceIssuedAt - this.clockRollbackToleranceMs) {
-                return false;
-              }
-
-              return clientNow < validation.licenseData.expiresAt;
-            }
-
-            private detectClockSkew(clientTime: number, serverTime: number): ClockSkewResult {
-              const skewMs = clientTime - serverTime;
-              const absoluteSkew = Math.abs(skewMs);
-
-              return {
-                isSkewed: absoluteSkew >= 60 * 1000,
-                skewMs,
-                severity: absoluteSkew < 60 * 1000
-                  ? "NONE"
-                  : absoluteSkew < this.clockSkewThresholdMs
-                    ? "WARNING"
-                    : "CRITICAL"
-              };
-            }
-
-            private readString(value: unknown): string | null {
-              return typeof value === "string" && value.trim() ? value.trim() : null;
-            }
-
-            private toStringArray(value: unknown): string[] {
-              return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-            }
-
-            private toNumber(value: unknown, fallback: number): number {
-              return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-            }
-
-            private toTimestamp(value: unknown, fallback: number): number {
-              if (typeof value === "number" && Number.isFinite(value)) {
-                return value;
-              }
-
-              if (typeof value === "string") {
-                const asNumber = Number(value);
-                if (Number.isFinite(asNumber)) {
-                  return asNumber;
-                }
-
-                const parsed = Date.parse(value);
-                if (Number.isFinite(parsed)) {
-                  return parsed;
-                }
-              }
-
-              return fallback;
-            }
-
-            private toOptionalTimestamp(value: unknown): number | undefined {
-              if (value === undefined || value === null || value === "") {
-                return undefined;
-              }
-
-              return this.toTimestamp(value, Date.now());
-            }
+              const txt = await res.text();
+              try { return JSON.parse(txt); } catch { return { ok: res.ok, status: res.ok?"OK":"ERROR", message: txt }; }
+            } finally { clearTimeout(t); }
           }
-
-          export const licenseApiService = new LicenseApiService();
+          export function checkLicense(licenseKey: string, softwareName: string) { return callWebApp("check", { licenseKey, softwareName }); }
+          export function activateLicense(licenseKey: string, machineId: string, softwareName: string, customer?: string, phone?: string) {
+            return callWebApp("activate", { licenseKey, machineId, softwareName, customer, phone });
+          }
           EOF
+          cat > apps/desktop/src/main/ipc/licenseIpc.ts <<'EOF'
+          import { ipcMain, app } from "electron";
+          import { getHashedMachineId } from "../services/fingerprint";
+          import { checkLicense, activateLicense } from "../services/licenseWebApp";
+          ipcMain.handle("license:check", async (_e, licenseKey: string) => {
+            const softwareName = app.getName() || "Partling-sale";
+            return checkLicense(licenseKey, softwareName);
+          });
+          ipcMain.handle("license:activate", async (_e, p: { licenseKey: string; customer?: string; phone?: string }) => {
+            const softwareName = app.getName() || "Partling-sale";
+            const machineId = await getHashedMachineId();
+            return activateLicense(p.licenseKey, machineId, softwareName, p.customer, p.phone);
+          });
+          EOF
+          if [ -f apps/desktop/src/main/index.ts ]; then
+            grep -q 'app.setName("Partling-sale")' apps/desktop/src/main/index.ts || \
+              sed -i '1 i\\import { app } from "electron";\napp.setName("Partling-sale");\nimport "./ipc/licenseIpc";' apps/desktop/src/main/index.ts
+          else
+            mkdir -p apps/desktop/src/main
+            cat > apps/desktop/src/main/index.ts <<'EOF'
+            import { app, BrowserWindow } from "electron";
+            app.setName("Partling-sale");
+            import "./ipc/licenseIpc";
+            let win: BrowserWindow | null = null;
+            app.whenReady().then(()=>{ win = new BrowserWindow({ webPreferences:{ preload: __dirname + "/../preload/index.js" }});
+              win.loadURL(process.env.ELECTRON_RENDERER_URL || "file://" + __dirname + "/../renderer/index.html"); });
+            EOF
+          fi
+          mkdir -p apps/desktop/src/preload
+          if [ -f apps/desktop/src/preload/index.ts ]; then
+            grep -q 'license:' apps/desktop/src/preload/index.ts || cat >> apps/desktop/src/preload/index.ts <<'EOF'
 
-          # 4) CI: Build Windows (Portable + NSIS) – inject Apps Script secrets/vars
-          cat > .github/workflows/build-windows.yml << 'EOF'
+            import { contextBridge, ipcRenderer } from "electron";
+            contextBridge.exposeInMainWorld("license", {
+              check: (k: string) => ipcRenderer.invoke("license:check", k),
+              activate: (k: string, c?: string, p?: string) => ipcRenderer.invoke("license:activate", { licenseKey: k, customer: c, phone: p })
+            });
+            EOF
+          else
+            cat > apps/desktop/src/preload/index.ts <<'EOF'
+            import { contextBridge, ipcRenderer } from "electron";
+            contextBridge.exposeInMainWorld("license", {
+              check: (k: string) => ipcRenderer.invoke("license:check", k),
+              activate: (k: string, c?: string, p?: string) => ipcRenderer.invoke("license:activate", { licenseKey: k, customer: c, phone: p })
+            });
+            EOF
+          fi
+          cat > apps/desktop/src/renderer/screens/LicenseActivation/Activate.tsx <<'EOF'
+          import { useState } from "react";
+          declare global { interface Window { license: {
+            check(k: string): Promise<{ ok: boolean; status: string; message?: string }>;
+            activate(k: string, c?: string, p?: string): Promise<{ ok: boolean; status: string; message?: string }>;
+          } } }
+          export default function Activate() {
+            const [key, setKey] = useState(""); const [customer, setCustomer] = useState("");
+            const [phone, setPhone] = useState(""); const [msg, setMsg] = useState("");
+            const onCheck = async () => { const r = await window.license.check(key.trim()); setMsg(`${r.status}${r.message?`: ${r.message}`:""}`); };
+            const onActivate = async () => { const r = await window.license.activate(key.trim(), customer.trim()||undefined, phone.trim()||undefined);
+              setMsg(`${r.status}${r.message?`: ${r.message}`:""}`); };
+            return (<div className="space-y-3"><h2 className="text-lg font-semibold">Kích hoạt bản quyền</h2>
+              <input placeholder="Mã Kích Hoạt" value={key} onChange={e=>setKey(e.target.value)} />
+              <input placeholder="Khách hàng (tùy chọn)" value={customer} onChange={e=>setCustomer(e.target.value)} />
+              <input placeholder="SĐT (tùy chọn)" value={phone} onChange={e=>setPhone(e.target.value)} />
+              <div className="flex gap-2"><button onClick={onCheck}>Kiểm tra</button><button onClick={onActivate}>Kích hoạt</button></div>
+              {msg && <div>{msg}</div>}</div>); }
+          EOF
+          cat > .github/workflows/build-windows.yml <<'EOF'
           name: Build Windows (Portable + NSIS) - Partling-sale
-          on:
-            workflow_dispatch:
-            push:
-              branches: [ main ]
+          on: { workflow_dispatch: {}, push: { branches: [ "main" ] } }
           jobs:
             build:
               runs-on: windows-latest
               steps:
                 - uses: actions/checkout@v4
-                - uses: pnpm/action-setup@v4
-                  with:
-                    version: 9
                 - uses: actions/setup-node@v4
-                  with:
-                    node-version: 20
-                    cache: pnpm
+                  with: { node-version: 20 }
+                - name: Enable corepack (pnpm)
+                  run: corepack enable
                 - name: Install deps
                   run: pnpm install --frozen-lockfile
                 - name: Build (renderer/main)
@@ -532,19 +151,20 @@ jobs:
                   env:
                     VITE_LICENSE_WEBAPP_URL: ${{ vars.LICENSE_WEBAPP_URL || secrets.LICENSE_WEBAPP_URL }}
                     VITE_LICENSE_API_KEY: ${{ secrets.LICENSE_API_KEY }}
-                    VITE_LICENSE_SOFTWARE_NAME: Partling-sale
                   run: pnpm build
-                - name: Package Portable and NSIS
+                - name: Package Portable
                   working-directory: apps/desktop
-                  env:
-                    SPARELINK_UPDATE_URL: ${{ vars.SPARELINK_UPDATE_URL || secrets.SPARELINK_UPDATE_URL }}
-                  run: npx electron-builder --config electron-builder.json --win portable nsis
+                  run: npx electron-builder --win portable
+                - name: Package NSIS
+                  working-directory: apps/desktop
+                  run: npx electron-builder --win nsis
                 - name: Upload artifacts
                   uses: actions/upload-artifact@v4
                   with:
                     name: Partling-sale-Windows
                     path: |
-                      apps/desktop/release/**/*.exe
+                      apps/desktop/dist/*.exe
+                      apps/desktop/dist/*.zip
           EOF
 
       - name: Create Pull Request
@@ -556,7 +176,7 @@ jobs:
             - Desktop calls Google Apps Script Web App directly (no SA JSON, no backend)
             - Sends X-Api-Key from CI secret with each request
             - Machine ID hashed (SHA-256) and recorded on activation
-              - Packaging: Portable + NSIS named “Partling-sale”
+            - Packaging: Portable + NSIS named “Partling-sale”
             - CI workflow builds and uploads both artifacts
           branch: feat/partling-sale-webapp-licensing
           base: main
