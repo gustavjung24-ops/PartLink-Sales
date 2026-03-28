@@ -63,6 +63,39 @@ export interface PasswordResetResult {
   message: string;
 }
 
+export interface AuthSetupStatus {
+  hasUsers: boolean;
+  userCount: number;
+}
+
+export interface AuthManagedUser {
+  id: string;
+  name: string;
+  email: string;
+  roles: UserRole[];
+  active: boolean;
+  lastLoginAt: number | null;
+}
+
+export interface CreateInitialAdminPayload {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface CreateManagedUserPayload {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface UpdateManagedUserPayload {
+  id: string;
+  role?: UserRole;
+  active?: boolean;
+}
+
 export interface FileReadPayload {
   filePath: string;
   encoding?: "utf8" | "utf-8";
@@ -116,6 +149,11 @@ export interface ElectronAPI {
     loadSession: () => Promise<AuthSession | null>;
     saveSession: (payload: AuthSession) => Promise<void>;
     clearSession: () => Promise<void>;
+    getSetupStatus: () => Promise<AuthSetupStatus>;
+    createInitialAdmin: (payload: CreateInitialAdminPayload) => Promise<AuthManagedUser>;
+    listUsers: () => Promise<AuthManagedUser[]>;
+    createUser: (payload: CreateManagedUserPayload) => Promise<AuthManagedUser>;
+    updateUser: (payload: UpdateManagedUserPayload) => Promise<AuthManagedUser>;
   };
   fileSystem: {
     readTextFile: (payload: FileReadPayload) => Promise<string>;
@@ -157,6 +195,11 @@ export const IPC_CHANNELS = {
     LOAD_SESSION: "auth:load-session",
     SAVE_SESSION: "auth:save-session",
     CLEAR_SESSION: "auth:clear-session",
+    GET_SETUP_STATUS: "auth:get-setup-status",
+    CREATE_INITIAL_ADMIN: "auth:create-initial-admin",
+    LIST_USERS: "auth:list-users",
+    CREATE_USER: "auth:create-user",
+    UPDATE_USER: "auth:update-user",
   },
   filesystem: {
     READ_TEXT_FILE: "filesystem:read-text-file",
@@ -201,6 +244,11 @@ export const IPC_CHANNELS_LEGACY = {
   AUTH_LOAD_SESSION: "auth:load-session",
   AUTH_SAVE_SESSION: "auth:save-session",
   AUTH_CLEAR_SESSION: "auth:clear-session",
+  AUTH_GET_SETUP_STATUS: "auth:get-setup-status",
+  AUTH_CREATE_INITIAL_ADMIN: "auth:create-initial-admin",
+  AUTH_LIST_USERS: "auth:list-users",
+  AUTH_CREATE_USER: "auth:create-user",
+  AUTH_UPDATE_USER: "auth:update-user",
   FILESYSTEM_READ_TEXT_FILE: "filesystem:read-text-file",
   FILESYSTEM_WRITE_TEXT_FILE: "filesystem:write-text-file",
   APP_GET_INFO: "app:get-info",

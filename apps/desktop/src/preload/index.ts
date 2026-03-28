@@ -48,7 +48,12 @@ const electronAPI: ElectronAPI = {
     logout: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGOUT, payload),
     loadSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOAD_SESSION),
     saveSession: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_SAVE_SESSION, payload),
-    clearSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION)
+    clearSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION),
+    getSetupStatus: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_GET_SETUP_STATUS),
+    createInitialAdmin: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CREATE_INITIAL_ADMIN, payload),
+    listUsers: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LIST_USERS),
+    createUser: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CREATE_USER, payload),
+    updateUser: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_UPDATE_USER, payload)
   },
   fileSystem: {
     readTextFile: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE, payload),

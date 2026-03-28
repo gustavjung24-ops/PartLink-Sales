@@ -1,5 +1,6 @@
 "use strict";
 const electron = require("electron");
+const node_fs = require("node:fs");
 const node_url = require("node:url");
 const path = require("node:path");
 const promises = require("node:fs/promises");
@@ -18,7 +19,12 @@ const IPC_CHANNELS = {
     LOGOUT: "auth:logout",
     LOAD_SESSION: "auth:load-session",
     SAVE_SESSION: "auth:save-session",
-    CLEAR_SESSION: "auth:clear-session"
+    CLEAR_SESSION: "auth:clear-session",
+    GET_SETUP_STATUS: "auth:get-setup-status",
+    CREATE_INITIAL_ADMIN: "auth:create-initial-admin",
+    LIST_USERS: "auth:list-users",
+    CREATE_USER: "auth:create-user",
+    UPDATE_USER: "auth:update-user"
   },
   filesystem: {
     READ_TEXT_FILE: "filesystem:read-text-file",
@@ -61,6 +67,11 @@ const IPC_CHANNELS_LEGACY = {
   AUTH_LOAD_SESSION: "auth:load-session",
   AUTH_SAVE_SESSION: "auth:save-session",
   AUTH_CLEAR_SESSION: "auth:clear-session",
+  AUTH_GET_SETUP_STATUS: "auth:get-setup-status",
+  AUTH_CREATE_INITIAL_ADMIN: "auth:create-initial-admin",
+  AUTH_LIST_USERS: "auth:list-users",
+  AUTH_CREATE_USER: "auth:create-user",
+  AUTH_UPDATE_USER: "auth:update-user",
   FILESYSTEM_READ_TEXT_FILE: "filesystem:read-text-file",
   FILESYSTEM_WRITE_TEXT_FILE: "filesystem:write-text-file",
   APP_GET_INFO: "app:get-info",
@@ -498,7 +509,7 @@ class LicenseApiService {
   nonceRequiredAfterMs = Date.UTC(2026, 2, 24, 0, 0, 0);
   // 2026-03-24T00:00:00Z
   lastServerNonce = null;
-  constructor(apiBaseUrl = "http://localhost:3000") {
+  constructor(apiBaseUrl = process.env.VITE_LICENSE_API_URL || process.env.LICENSE_API_URL || "http://localhost:3000") {
     this.apiBaseUrl = apiBaseUrl;
   }
   restoreNonce(nonce) {
@@ -894,38 +905,35 @@ class SecureSessionStore {
 const secureSessionStore = new SecureSessionStore();
 const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1e3;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
-const USERS = [
-  {
-    id: "u_sales_01",
-    name: "Nguyen Van User",
-    email: "user@sparelink.local",
-    password: "Password@123",
-    roles: ["USER"]
-  },
-  {
-    id: "u_senior_01",
-    name: "Tran Thu Senior",
-    email: "senior@sparelink.local",
-    password: "Password@123",
-    roles: ["SENIOR_SALES"]
-  },
-  {
-    id: "u_admin_01",
-    name: "Le Minh Admin",
-    email: "admin@sparelink.local",
-    password: "Password@123",
-    roles: ["ADMIN"]
-  },
-  {
-    id: "u_super_01",
-    name: "Pham Thanh Super",
-    email: "super@sparelink.local",
-    password: "Password@123",
-    roles: ["SUPER_ADMIN"]
+function normalizeEmail(value) {
+  return value.trim().toLowerCase();
+}
+function hashPassword(plain) {
+  return crypto$1.createHash("sha256").update(plain).digest("hex");
+}
+function validatePassword(plain) {
+  if (plain.length < 8) {
+    throw new Error("Mật khẩu cần ít nhất 8 ký tự");
   }
-];
+}
 class AuthService {
   refreshTokens = /* @__PURE__ */ new Map();
+  usersFilePath = path.join(electron.app.getPath("userData"), "auth", "users.local.json");
+  async loadUsers() {
+    try {
+      const content = await promises.readFile(this.usersFilePath, "utf-8");
+      const parsed = JSON.parse(content);
+      return Array.isArray(parsed.users) ? parsed.users : [];
+    } catch {
+      return [];
+    }
+  }
+  async saveUsers(users) {
+    const dir = path.dirname(this.usersFilePath);
+    await promises.mkdir(dir, { recursive: true });
+    const payload = { users };
+    await promises.writeFile(this.usersFilePath, JSON.stringify(payload, null, 2), "utf-8");
+  }
   toAuthUser(record) {
     return {
       id: record.id,
@@ -934,18 +942,16 @@ class AuthService {
       roles: record.roles
     };
   }
-  findById(id) {
-    const user = USERS.find((item) => item.id === id);
-    if (!user) {
-      throw new Error("Tài khoản không tồn tại");
-    }
-    return user;
+  toManagedUser(record) {
+    return {
+      id: record.id,
+      name: record.name,
+      email: record.email,
+      roles: record.roles,
+      active: record.active,
+      lastLoginAt: record.lastLoginAt
+    };
   }
-  /**
-   * NOTE: Access token format is a non-cryptographic opaque string for the
-   * desktop IPC layer only — NOT a JWT and NOT compatible with the REST API.
-   * Replace with proper JWT before integrating with the API backend.
-   */
   issueAccessToken(user) {
     const issuedAt = Date.now();
     const expiresAt = issuedAt + ACCESS_TOKEN_TTL_MS;
@@ -965,16 +971,112 @@ class AuthService {
     });
     return token;
   }
+  async findUserById(id) {
+    const users = await this.loadUsers();
+    const user = users.find((item) => item.id === id && item.active);
+    if (!user) {
+      throw new Error("Tài khoản không tồn tại");
+    }
+    return user;
+  }
   /** Returns the expiry (Unix ms) of a refresh token, or null if not registered/expired. */
   getRefreshTokenExpiry(refreshToken) {
     return this.refreshTokens.get(refreshToken)?.expiresAt ?? null;
   }
+  async getSetupStatus() {
+    const users = await this.loadUsers();
+    return {
+      hasUsers: users.length > 0,
+      userCount: users.length
+    };
+  }
+  async createInitialAdmin(payload) {
+    const users = await this.loadUsers();
+    if (users.length > 0) {
+      throw new Error("Hệ thống đã có tài khoản. Không thể tạo ADMIN đầu tiên.");
+    }
+    const email = normalizeEmail(payload.email);
+    validatePassword(payload.password);
+    const admin = {
+      id: crypto$1.randomUUID(),
+      name: payload.name.trim() || "System Admin",
+      email,
+      passwordHash: hashPassword(payload.password),
+      roles: ["ADMIN"],
+      active: true,
+      lastLoginAt: null,
+      createdAt: Date.now()
+    };
+    await this.saveUsers([admin]);
+    return this.toManagedUser(admin);
+  }
+  async listUsers() {
+    const users = await this.loadUsers();
+    return users.slice().sort((a, b) => a.createdAt - b.createdAt).map((user) => this.toManagedUser(user));
+  }
+  async createUser(payload) {
+    const users = await this.loadUsers();
+    if (users.length === 0) {
+      throw new Error("Cần tạo ADMIN đầu tiên trước khi thêm nhân viên.");
+    }
+    const email = normalizeEmail(payload.email);
+    if (users.some((user2) => user2.email === email)) {
+      throw new Error("Email đã tồn tại");
+    }
+    validatePassword(payload.password);
+    const user = {
+      id: crypto$1.randomUUID(),
+      name: payload.name.trim(),
+      email,
+      passwordHash: hashPassword(payload.password),
+      roles: [payload.role],
+      active: true,
+      lastLoginAt: null,
+      createdAt: Date.now()
+    };
+    users.push(user);
+    await this.saveUsers(users);
+    return this.toManagedUser(user);
+  }
+  async updateUser(payload) {
+    const users = await this.loadUsers();
+    const index = users.findIndex((user) => user.id === payload.id);
+    if (index === -1) {
+      throw new Error("Không tìm thấy người dùng");
+    }
+    if (payload.active === false) {
+      const isAdmin = users[index].roles.includes("ADMIN") || users[index].roles.includes("SUPER_ADMIN");
+      if (isAdmin) {
+        const activeAdmins = users.filter(
+          (user) => user.active && (user.roles.includes("ADMIN") || user.roles.includes("SUPER_ADMIN"))
+        );
+        if (activeAdmins.length <= 1) {
+          throw new Error("Phải giữ lại ít nhất 1 tài khoản quản trị đang hoạt động.");
+        }
+      }
+    }
+    const updated = {
+      ...users[index],
+      roles: payload.role ? [payload.role] : users[index].roles,
+      active: payload.active ?? users[index].active
+    };
+    users[index] = updated;
+    await this.saveUsers(users);
+    return this.toManagedUser(updated);
+  }
   async login(payload) {
-    const email = payload.email.trim().toLowerCase();
-    const user = USERS.find((item) => item.email.toLowerCase() === email);
-    if (!user || user.password !== payload.password) {
+    const users = await this.loadUsers();
+    if (users.length === 0) {
+      throw new Error("Hệ thống chưa có tài khoản. Hãy tạo ADMIN đầu tiên.");
+    }
+    const email = normalizeEmail(payload.email);
+    const passwordHash = hashPassword(payload.password);
+    const user = users.find((item) => item.email === email && item.active);
+    if (!user || user.passwordHash !== passwordHash) {
       throw new Error("Email hoặc mật khẩu không đúng");
     }
+    user.lastLoginAt = Date.now();
+    await this.saveUsers(users);
     const refreshToken = this.issueRefreshToken(user);
     const access = this.issueAccessToken(user);
     const now = Date.now();
@@ -1005,7 +1107,7 @@ class AuthService {
       this.refreshTokens.delete(refreshToken);
       throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại");
     }
-    const user = this.findById(tokenState.userId);
+    const user = await this.findUserById(tokenState.userId);
     return this.issueAccessToken(user);
   }
   async me(accessToken) {
@@ -1014,7 +1116,7 @@ class AuthService {
       return null;
     }
     try {
-      const user = this.findById(userId);
+      const user = await this.findUserById(userId);
       return this.toAuthUser(user);
     } catch {
       return null;
@@ -1033,8 +1135,9 @@ class AuthService {
     }
   }
   async requestPasswordReset(email) {
-    const normalized = email.trim().toLowerCase();
-    const exists = USERS.some((item) => item.email.toLowerCase() === normalized);
+    const normalized = normalizeEmail(email);
+    const users = await this.loadUsers();
+    const exists = users.some((item) => item.email === normalized);
     if (!exists) {
       return {
         sent: true,
@@ -1115,6 +1218,26 @@ function registerIpcHandlers(isVerbose) {
     }
   );
   withErrorHandling(
+    IPC_CHANNELS_LEGACY.AUTH_GET_SETUP_STATUS,
+    async () => authService.getSetupStatus()
+  );
+  withErrorHandling(
+    IPC_CHANNELS_LEGACY.AUTH_CREATE_INITIAL_ADMIN,
+    async (_event, payload) => authService.createInitialAdmin(payload)
+  );
+  withErrorHandling(
+    IPC_CHANNELS_LEGACY.AUTH_LIST_USERS,
+    async () => authService.listUsers()
+  );
+  withErrorHandling(
+    IPC_CHANNELS_LEGACY.AUTH_CREATE_USER,
+    async (_event, payload) => authService.createUser(payload)
+  );
+  withErrorHandling(
+    IPC_CHANNELS_LEGACY.AUTH_UPDATE_USER,
+    async (_event, payload) => authService.updateUser(payload)
+  );
+  withErrorHandling(
     IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE,
     async (_event, payload) => {
       return promises.readFile(payload.filePath, { encoding: payload.encoding ?? "utf-8" });
@@ -1192,10 +1315,74 @@ function unregisterIpcHandlers() {
     }
   });
 }
+const BUILD_URL = "";
+const BUILD_KEY = "";
+function resolveUrl() {
+  return process.env.VITE_LICENSE_WEBAPP_URL || process.env.LICENSE_WEBAPP_URL || BUILD_URL || "";
+}
+function resolveKey() {
+  return process.env.VITE_LICENSE_API_KEY || process.env.LICENSE_API_KEY || BUILD_KEY || "";
+}
+function joinAction(url, action) {
+  return url.includes("?") ? `${url}&action=${encodeURIComponent(action)}` : `${url}?action=${encodeURIComponent(action)}`;
+}
+async function callWebApp(action, payload) {
+  const base = resolveUrl();
+  if (!base) {
+    throw new Error("LICENSE_WEBAPP_URL not configured");
+  }
+  const url = joinAction(base, action);
+  const key = resolveKey();
+  const body = { ...payload, ...key ? { apiKey: key } : {} };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8e3);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        ok: response.ok,
+        status: response.ok ? "OK" : "ERROR",
+        message: text
+      };
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+function checkLicense(licenseKey, softwareName) {
+  return callWebApp("check", { licenseKey, softwareName });
+}
+function activateLicense(licenseKey, machineId, softwareName, customer, phone) {
+  return callWebApp("activate", {
+    licenseKey,
+    machineId,
+    softwareName,
+    customer,
+    phone
+  });
+}
+electron.ipcMain.handle("license:webapp:check", async (_event, licenseKey) => {
+  const softwareName = electron.app.getName() || "Partling-sale";
+  return checkLicense(licenseKey, softwareName);
+});
+electron.ipcMain.handle("license:webapp:activate", async (_event, payload) => {
+  const softwareName = electron.app.getName() || "Partling-sale";
+  const machineId = await deviceFingerprintService.getFingerprintHash();
+  return activateLicense(payload.licenseKey, machineId, softwareName, payload.customer, payload.phone);
+});
 class SqliteCacheRecoveryService {
   databasePath = process.env.SPARELINK_SQLITE_CACHE_PATH ?? path.join(electron.app.getPath("userData"), "cache", "offline-cache.sqlite");
   backupDir = path.join(electron.app.getPath("userData"), "cache", "backups");
   quarantineDir = path.join(electron.app.getPath("userData"), "cache", "corrupt");
+  auditLogPath = path.join(electron.app.getPath("userData"), "cache", "sync-audit.log");
   getDatabasePath() {
     return this.databasePath;
   }
@@ -1246,7 +1433,24 @@ class SqliteCacheRecoveryService {
       database?.close();
     }
   }
+  /**
+   * Back up the current SQLite cache before a sync overwrite replaces it with
+   * server data.  The conflict resolution strategy is **server wins**: the
+   * authoritative server state always replaces the local cache.  A pre-overwrite
+   * backup is kept so a fallback is available if the new data fails integrity
+   * checks.  Every call is appended to the sync audit log for traceability.
+   *
+   * @param reason  Short label describing why the overwrite is happening
+   *                (e.g. "sync-overwrite", "force-refresh").
+   * @returns       The path of the backup file and the log timestamp.
+   */
   async backupBeforeOverwrite(reason = "sync-overwrite") {
+    const loggedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const backupPath = await this._createBackup(reason);
+    await this._appendSyncAuditLog(reason, backupPath, loggedAt);
+    return { backupPath, loggedAt };
+  }
+  async _createBackup(reason) {
     const exists = await this.fileExists(this.databasePath);
     if (!exists) {
       return null;
@@ -1257,6 +1461,25 @@ class SqliteCacheRecoveryService {
     const targetPath = path.join(this.backupDir, `offline-cache-${safeReason}-${timestamp}.sqlite`);
     await promises.copyFile(this.databasePath, targetPath);
     return targetPath;
+  }
+  /**
+   * Append a structured line to the sync audit log so overwrite events can be
+   * traced during incident investigation.
+   */
+  async _appendSyncAuditLog(reason, backupPath, timestamp) {
+    const line = JSON.stringify({
+      event: "sync-overwrite",
+      reason,
+      backupPath,
+      timestamp,
+      databasePath: this.databasePath
+    }) + "\n";
+    try {
+      await promises.mkdir(path.dirname(this.auditLogPath), { recursive: true });
+      await promises.appendFile(this.auditLogPath, line, { encoding: "utf8" });
+    } catch (error) {
+      console.error("[SqliteCacheRecovery] Sync audit log write failed:", error);
+    }
   }
   async quarantineDatabase(reason) {
     const exists = await this.fileExists(this.databasePath);
@@ -1388,6 +1611,10 @@ const __filename$1 = node_url.fileURLToPath(require("url").pathToFileURL(__filen
 const __dirname$1 = path.dirname(__filename$1);
 let mainWindow = null;
 function getPreloadPath() {
+  const cjsPath = path.join(__dirname$1, "../preload/index.cjs");
+  if (node_fs.existsSync(cjsPath)) {
+    return cjsPath;
+  }
   return path.join(__dirname$1, "../preload/index.js");
 }
 function getRendererEntry() {
@@ -1428,6 +1655,10 @@ function createMainWindow() {
   } else {
     browserWindow.loadFile(getRendererEntry());
   }
+  browserWindow.webContents.on("did-fail-load", (_event, code, description, validatedURL) => {
+    electron.dialog.showErrorBox("UI load failed", `Code ${code}: ${description}
+URL: ${validatedURL}`);
+  });
   return browserWindow;
 }
 const hasSingleInstanceLock = electron.app.requestSingleInstanceLock();

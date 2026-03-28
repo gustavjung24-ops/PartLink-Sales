@@ -1,19 +1,34 @@
-import { randomBytes } from "node:crypto";
+import { app } from "electron";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import {
   type AuthLoginPayload,
   type AuthLoginResult,
+  type AuthManagedUser,
   type AuthRefreshResult,
+  type AuthSetupStatus,
   type AuthUser,
+  type CreateInitialAdminPayload,
+  type CreateManagedUserPayload,
   type PasswordResetResult,
+  type UpdateManagedUserPayload,
 } from "@/shared/electronApi";
 import { secureSessionStore } from "./secureSessionStore";
 
-interface UserRecord {
+interface PersistedUser {
   id: string;
   name: string;
   email: string;
-  password: string;
+  passwordHash: string;
   roles: AuthUser["roles"];
+  active: boolean;
+  lastLoginAt: number | null;
+  createdAt: number;
+}
+
+interface PersistedUserDb {
+  users: PersistedUser[];
 }
 
 interface RefreshTokenState {
@@ -25,41 +40,42 @@ interface RefreshTokenState {
 const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-const USERS: UserRecord[] = [
-  {
-    id: "u_sales_01",
-    name: "Nguyen Van User",
-    email: "user@sparelink.local",
-    password: "Password@123",
-    roles: ["USER"],
-  },
-  {
-    id: "u_senior_01",
-    name: "Tran Thu Senior",
-    email: "senior@sparelink.local",
-    password: "Password@123",
-    roles: ["SENIOR_SALES"],
-  },
-  {
-    id: "u_admin_01",
-    name: "Le Minh Admin",
-    email: "admin@sparelink.local",
-    password: "Password@123",
-    roles: ["ADMIN"],
-  },
-  {
-    id: "u_super_01",
-    name: "Pham Thanh Super",
-    email: "super@sparelink.local",
-    password: "Password@123",
-    roles: ["SUPER_ADMIN"],
-  },
-];
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function hashPassword(plain: string): string {
+  return createHash("sha256").update(plain).digest("hex");
+}
+
+function validatePassword(plain: string): void {
+  if (plain.length < 8) {
+    throw new Error("Mật khẩu cần ít nhất 8 ký tự");
+  }
+}
 
 export class AuthService {
   private readonly refreshTokens = new Map<string, RefreshTokenState>();
+  private readonly usersFilePath = path.join(app.getPath("userData"), "auth", "users.local.json");
 
-  private toAuthUser(record: UserRecord): AuthUser {
+  private async loadUsers(): Promise<PersistedUser[]> {
+    try {
+      const content = await readFile(this.usersFilePath, "utf-8");
+      const parsed = JSON.parse(content) as PersistedUserDb;
+      return Array.isArray(parsed.users) ? parsed.users : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async saveUsers(users: PersistedUser[]): Promise<void> {
+    const dir = path.dirname(this.usersFilePath);
+    await mkdir(dir, { recursive: true });
+    const payload: PersistedUserDb = { users };
+    await writeFile(this.usersFilePath, JSON.stringify(payload, null, 2), "utf-8");
+  }
+
+  private toAuthUser(record: PersistedUser): AuthUser {
     return {
       id: record.id,
       name: record.name,
@@ -68,20 +84,18 @@ export class AuthService {
     };
   }
 
-  private findById(id: string): UserRecord {
-    const user = USERS.find((item) => item.id === id);
-    if (!user) {
-      throw new Error("Tài khoản không tồn tại");
-    }
-    return user;
+  private toManagedUser(record: PersistedUser): AuthManagedUser {
+    return {
+      id: record.id,
+      name: record.name,
+      email: record.email,
+      roles: record.roles,
+      active: record.active,
+      lastLoginAt: record.lastLoginAt,
+    };
   }
 
-  /**
-   * NOTE: Access token format is a non-cryptographic opaque string for the
-   * desktop IPC layer only — NOT a JWT and NOT compatible with the REST API.
-   * Replace with proper JWT before integrating with the API backend.
-   */
-  private issueAccessToken(user: UserRecord): AuthRefreshResult {
+  private issueAccessToken(user: PersistedUser): AuthRefreshResult {
     const issuedAt = Date.now();
     const expiresAt = issuedAt + ACCESS_TOKEN_TTL_MS;
     const tokenPayload = `${user.id}.${expiresAt}.${randomBytes(16).toString("hex")}`;
@@ -93,7 +107,7 @@ export class AuthService {
     };
   }
 
-  private issueRefreshToken(user: UserRecord): string {
+  private issueRefreshToken(user: PersistedUser): string {
     const token = `${user.id}.rf.${randomBytes(20).toString("hex")}`;
     this.refreshTokens.set(token, {
       userId: user.id,
@@ -104,18 +118,135 @@ export class AuthService {
     return token;
   }
 
+  private async findUserById(id: string): Promise<PersistedUser> {
+    const users = await this.loadUsers();
+    const user = users.find((item) => item.id === id && item.active);
+    if (!user) {
+      throw new Error("Tài khoản không tồn tại");
+    }
+    return user;
+  }
+
   /** Returns the expiry (Unix ms) of a refresh token, or null if not registered/expired. */
   getRefreshTokenExpiry(refreshToken: string): number | null {
     return this.refreshTokens.get(refreshToken)?.expiresAt ?? null;
   }
 
-  async login(payload: AuthLoginPayload): Promise<AuthLoginResult> {
-    const email = payload.email.trim().toLowerCase();
-    const user = USERS.find((item) => item.email.toLowerCase() === email);
+  async getSetupStatus(): Promise<AuthSetupStatus> {
+    const users = await this.loadUsers();
+    return {
+      hasUsers: users.length > 0,
+      userCount: users.length,
+    };
+  }
 
-    if (!user || user.password !== payload.password) {
+  async createInitialAdmin(payload: CreateInitialAdminPayload): Promise<AuthManagedUser> {
+    const users = await this.loadUsers();
+    if (users.length > 0) {
+      throw new Error("Hệ thống đã có tài khoản. Không thể tạo ADMIN đầu tiên.");
+    }
+
+    const email = normalizeEmail(payload.email);
+    validatePassword(payload.password);
+
+    const admin: PersistedUser = {
+      id: randomUUID(),
+      name: payload.name.trim() || "System Admin",
+      email,
+      passwordHash: hashPassword(payload.password),
+      roles: ["ADMIN"],
+      active: true,
+      lastLoginAt: null,
+      createdAt: Date.now(),
+    };
+
+    await this.saveUsers([admin]);
+    return this.toManagedUser(admin);
+  }
+
+  async listUsers(): Promise<AuthManagedUser[]> {
+    const users = await this.loadUsers();
+    return users
+      .slice()
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((user) => this.toManagedUser(user));
+  }
+
+  async createUser(payload: CreateManagedUserPayload): Promise<AuthManagedUser> {
+    const users = await this.loadUsers();
+    if (users.length === 0) {
+      throw new Error("Cần tạo ADMIN đầu tiên trước khi thêm nhân viên.");
+    }
+
+    const email = normalizeEmail(payload.email);
+    if (users.some((user) => user.email === email)) {
+      throw new Error("Email đã tồn tại");
+    }
+
+    validatePassword(payload.password);
+
+    const user: PersistedUser = {
+      id: randomUUID(),
+      name: payload.name.trim(),
+      email,
+      passwordHash: hashPassword(payload.password),
+      roles: [payload.role],
+      active: true,
+      lastLoginAt: null,
+      createdAt: Date.now(),
+    };
+
+    users.push(user);
+    await this.saveUsers(users);
+    return this.toManagedUser(user);
+  }
+
+  async updateUser(payload: UpdateManagedUserPayload): Promise<AuthManagedUser> {
+    const users = await this.loadUsers();
+    const index = users.findIndex((user) => user.id === payload.id);
+    if (index === -1) {
+      throw new Error("Không tìm thấy người dùng");
+    }
+
+    if (payload.active === false) {
+      const isAdmin = users[index].roles.includes("ADMIN") || users[index].roles.includes("SUPER_ADMIN");
+      if (isAdmin) {
+        const activeAdmins = users.filter(
+          (user) => user.active && (user.roles.includes("ADMIN") || user.roles.includes("SUPER_ADMIN"))
+        );
+        if (activeAdmins.length <= 1) {
+          throw new Error("Phải giữ lại ít nhất 1 tài khoản quản trị đang hoạt động.");
+        }
+      }
+    }
+
+    const updated: PersistedUser = {
+      ...users[index],
+      roles: payload.role ? [payload.role] : users[index].roles,
+      active: payload.active ?? users[index].active,
+    };
+
+    users[index] = updated;
+    await this.saveUsers(users);
+    return this.toManagedUser(updated);
+  }
+
+  async login(payload: AuthLoginPayload): Promise<AuthLoginResult> {
+    const users = await this.loadUsers();
+    if (users.length === 0) {
+      throw new Error("Hệ thống chưa có tài khoản. Hãy tạo ADMIN đầu tiên.");
+    }
+
+    const email = normalizeEmail(payload.email);
+    const passwordHash = hashPassword(payload.password);
+    const user = users.find((item) => item.email === email && item.active);
+
+    if (!user || user.passwordHash !== passwordHash) {
       throw new Error("Email hoặc mật khẩu không đúng");
     }
+
+    user.lastLoginAt = Date.now();
+    await this.saveUsers(users);
 
     const refreshToken = this.issueRefreshToken(user);
     const access = this.issueAccessToken(user);
@@ -133,13 +264,10 @@ export class AuthService {
     let tokenState = this.refreshTokens.get(refreshToken);
 
     if (!tokenState) {
-      // App may have restarted — the in-memory Map is empty.
-      // Fall back to the securely stored session to validate the token.
       const stored = await secureSessionStore.loadStoredPayload();
       if (stored?.session.refreshToken === refreshToken) {
         const expiry = stored.refreshTokenExpiry ?? 0;
         if (Date.now() < expiry) {
-          // Trust the securely-stored token; restore it into the Map.
           const userId = refreshToken.split(".rf.")[0];
           tokenState = { userId, expiresAt: expiry, revoked: false };
           this.refreshTokens.set(refreshToken, tokenState);
@@ -156,7 +284,7 @@ export class AuthService {
       throw new Error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại");
     }
 
-    const user = this.findById(tokenState.userId);
+    const user = await this.findUserById(tokenState.userId);
     return this.issueAccessToken(user);
   }
 
@@ -167,7 +295,7 @@ export class AuthService {
     }
 
     try {
-      const user = this.findById(userId);
+      const user = await this.findUserById(userId);
       return this.toAuthUser(user);
     } catch {
       return null;
@@ -189,8 +317,9 @@ export class AuthService {
   }
 
   async requestPasswordReset(email: string): Promise<PasswordResetResult> {
-    const normalized = email.trim().toLowerCase();
-    const exists = USERS.some((item) => item.email.toLowerCase() === normalized);
+    const normalized = normalizeEmail(email);
+    const users = await this.loadUsers();
+    const exists = users.some((item) => item.email === normalized);
 
     if (!exists) {
       return {

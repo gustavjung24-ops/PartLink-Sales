@@ -26,6 +26,13 @@ export function LoginScreen(): JSX.Element {
   const [isForgotFlow, setIsForgotFlow] = useState(false);
   const [forgotEmail, setForgotEmail] = useState(isDev ? EMAIL_HINT : "");
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [setupChecking, setSetupChecking] = useState(true);
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [adminName, setAdminName] = useState("System Admin");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminPasswordConfirm, setAdminPasswordConfirm] = useState("");
 
   // Redirect already-authenticated users away from /login
   useEffect(() => {
@@ -33,6 +40,32 @@ export function LoginScreen(): JSX.Element {
       navigate(redirectAfterLogin || "/dashboard", { replace: true });
     }
   }, [isAuthenticated, navigate, redirectAfterLogin]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkSetup = async () => {
+      try {
+        const status = await window.electronAPI.auth.getSetupStatus();
+        if (!cancelled) {
+          setSetupRequired(!status.hasUsers);
+        }
+      } catch {
+        if (!cancelled) {
+          // Nếu không đọc được setup status, vẫn cho phép thử login như cũ.
+          setSetupRequired(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setSetupChecking(false);
+        }
+      }
+    };
+
+    void checkSetup();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submitLabel = useMemo(() => (isLoading ? "Đang xử lý..." : "Đăng nhập"), [isLoading]);
 
@@ -63,6 +96,35 @@ export function LoginScreen(): JSX.Element {
     } catch (forgotError) {
       const message = forgotError instanceof Error ? forgotError.message : "Không thể gửi yêu cầu đặt lại mật khẩu.";
       setForgotMessage(message);
+    }
+  };
+
+  const handleCreateInitialAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSetupError(null);
+
+    if (adminPassword !== adminPasswordConfirm) {
+      setSetupError("Mật khẩu xác nhận không khớp");
+      return;
+    }
+
+    try {
+      await window.electronAPI.auth.createInitialAdmin({
+        name: adminName.trim(),
+        email: adminEmail.trim(),
+        password: adminPassword,
+      });
+
+      await login({
+        email: adminEmail.trim(),
+        password: adminPassword,
+        rememberMe: true,
+      });
+
+      navigate("/dashboard", { replace: true });
+    } catch (setupErr) {
+      const message = setupErr instanceof Error ? setupErr.message : "Không thể tạo ADMIN đầu tiên";
+      setSetupError(message);
     }
   };
 
@@ -101,7 +163,74 @@ export function LoginScreen(): JSX.Element {
             </div>
           ) : null}
 
-          <form className="space-y-4" onSubmit={handleLogin}>
+          {setupChecking ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+              Đang kiểm tra cấu hình ban đầu...
+            </div>
+          ) : null}
+
+          {setupRequired ? (
+            <form className="space-y-4" onSubmit={handleCreateInitialAdmin}>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+                Hệ thống chưa có tài khoản. Hãy tạo ADMIN đầu tiên để bắt đầu sử dụng.
+              </div>
+
+              {setupError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200">
+                  {setupError}
+                </div>
+              ) : null}
+
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200">Họ tên quản trị</span>
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-sky-900"
+                  type="text"
+                  value={adminName}
+                  onChange={(event) => setAdminName(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200">Email quản trị</span>
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-sky-900"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(event) => setAdminEmail(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200">Mật khẩu</span>
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-sky-900"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label className="block space-y-1 text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200">Xác nhận mật khẩu</span>
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-sky-900"
+                  type="password"
+                  value={adminPasswordConfirm}
+                  onChange={(event) => setAdminPasswordConfirm(event.target.value)}
+                  required
+                />
+              </label>
+
+              <Button className="w-full" disabled={isLoading} type="submit">
+                Tạo ADMIN và đăng nhập
+              </Button>
+            </form>
+          ) : (
+            <form className="space-y-4" onSubmit={handleLogin}>
             <label className="block space-y-1 text-sm">
               <span className="font-medium text-slate-700 dark:text-slate-200">Email</span>
               <input
@@ -139,7 +268,8 @@ export function LoginScreen(): JSX.Element {
             <Button className="w-full" disabled={isLoading} type="submit">
               {submitLabel}
             </Button>
-          </form>
+            </form>
+          )}
 
           <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
             <button

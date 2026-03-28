@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthStore } from "../../stores/authStore";
 import { useOfflineStore } from "../../stores/offlineStore";
 
 // ---------------------------------------------------------------------------
-// Types & mock data
+// Types
 // ---------------------------------------------------------------------------
 interface AppUser {
   id: string;
@@ -14,16 +14,8 @@ interface AppUser {
   active: boolean;
 }
 
-const USERS_KEY = "sparelink:admin:users";
 const AI_CONFIG_KEY = "sparelink:admin:aiConfig";
 const AUDIT_KEY = "sparelink:admin:auditLog";
-
-const DEFAULT_USERS: AppUser[] = [
-  { id: "u1", name: "Nguyễn Văn A", email: "vana@company.com", role: "SALES", lastLogin: "2025-07-15T08:22:00Z", active: true },
-  { id: "u2", name: "Trần Thị B", email: "thib@company.com", role: "SENIOR_SALES", lastLogin: "2025-07-14T17:05:00Z", active: true },
-  { id: "u3", name: "Lê Minh C (Admin)", email: "minhc@company.com", role: "ADMIN", lastLogin: "2025-07-15T09:00:00Z", active: true },
-  { id: "u4", name: "Phạm Đức D", email: "ducd@company.com", role: "USER", lastLogin: null, active: false },
-];
 
 interface AiConfig {
   enabled: boolean;
@@ -84,11 +76,6 @@ const DEFAULT_AUDIT: AuditEntry[] = [
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function loadUsers(): AppUser[] {
-  try { return JSON.parse(localStorage.getItem(USERS_KEY) ?? "null") as AppUser[] ?? DEFAULT_USERS; } catch { return DEFAULT_USERS; }
-}
-function saveUsers(u: AppUser[]) { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
-
 function loadAiConfig(): AiConfig {
   try { return { ...DEFAULT_AI, ...JSON.parse(localStorage.getItem(AI_CONFIG_KEY) ?? "{}") as Partial<AiConfig> }; } catch { return DEFAULT_AI; }
 }
@@ -122,31 +109,138 @@ const ROLE_COLOR: Record<string, string> = {
 // Tab: Người dùng
 // ---------------------------------------------------------------------------
 function UsersTab(): JSX.Element {
-  const [users, setUsers] = useState<AppUser[]>(loadUsers);
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState("USER");
 
-  const toggleActive = (id: string) => {
-    setUsers((prev) => {
-      const next = prev.map((u) => (u.id === id ? { ...u, active: !u.active } : u));
-      saveUsers(next);
-      return next;
-    });
+  const loadUserList = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.auth.listUsers();
+      const mapped: AppUser[] = result.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.roles[0] ?? "USER",
+        lastLogin: user.lastLoginAt ? new Date(user.lastLoginAt).toISOString() : null,
+        active: user.active,
+      }));
+      setUsers(mapped);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Không tải được danh sách người dùng";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const changeRole = (id: string, role: string) => {
-    setUsers((prev) => {
-      const next = prev.map((u) => (u.id === id ? { ...u, role } : u));
-      saveUsers(next);
-      return next;
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    void loadUserList();
+  }, []);
+
+  const toggleActive = async (id: string) => {
+    const current = users.find((user) => user.id === id);
+    if (!current) {
+      return;
+    }
+    try {
+      await window.electronAPI.auth.updateUser({ id, active: !current.active });
+      await loadUserList();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Không cập nhật được trạng thái người dùng";
+      setError(message);
+    }
+  };
+
+  const changeRole = async (id: string, role: string) => {
+    try {
+      await window.electronAPI.auth.updateUser({ id, role: role as any });
+      await loadUserList();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Không cập nhật được vai trò";
+      setError(message);
+    }
+  };
+
+  const createUser = async () => {
+    if (!newName.trim() || !newEmail.trim() || !newPassword) {
+      setError("Vui lòng nhập đầy đủ tên, email và mật khẩu");
+      return;
+    }
+
+    try {
+      await window.electronAPI.auth.createUser({
+        name: newName.trim(),
+        email: newEmail.trim(),
+        password: newPassword,
+        role: newRole as any,
+      });
+      setNewName("");
+      setNewEmail("");
+      setNewPassword("");
+      setNewRole("USER");
+      await loadUserList();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Không tạo được người dùng";
+      setError(message);
+    }
   };
 
   return (
     <div className="space-y-4">
       {saved && <p className="text-xs text-emerald-600">✓ Đã lưu thay đổi</p>}
-      <p className="text-xs text-slate-500">Danh sách người dùng hiển thị từ bộ nhớ cục bộ (demo). Trong production, dữ liệu này được đồng bộ từ API.</p>
+      {error && <p className="text-xs text-rose-600">{error}</p>}
+      <p className="text-xs text-slate-500">Quản trị có thể tạo tài khoản nhân viên và phân quyền ngay trong ứng dụng.</p>
+
+      <div className="grid gap-2 rounded-lg border border-slate-200 p-3 md:grid-cols-5 dark:border-slate-700">
+        <input
+          className="rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+          placeholder="Họ tên"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+        <input
+          className="rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+          placeholder="Email"
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+        />
+        <input
+          className="rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+          type="password"
+          placeholder="Mật khẩu"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+        />
+        <select
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-900"
+          value={newRole}
+          onChange={(e) => setNewRole(e.target.value)}
+        >
+          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <button
+          type="button"
+          onClick={createUser}
+          className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-700"
+        >
+          + Thêm
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-500">Đang tải danh sách người dùng...</p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
           <thead>
@@ -189,6 +283,7 @@ function UsersTab(): JSX.Element {
           </tbody>
         </table>
       </div>
+      )}
       <p className="text-xs text-slate-400">Bảng hiển thị {users.length} người dùng · {users.filter((u) => u.active).length} đang hoạt động</p>
     </div>
   );

@@ -5,7 +5,11 @@ import {
   type AuthSession,
   type AuthLoginPayload,
   type AuthRefreshResult,
+  type AuthManagedUser,
+  type AuthSetupStatus,
   type AuthUser,
+  type CreateInitialAdminPayload,
+  type CreateManagedUserPayload,
   type FileReadPayload,
   type FileWritePayload,
   type PasswordResetPayload,
@@ -13,6 +17,7 @@ import {
   IPC_CHANNELS,
   IPC_CHANNELS_LEGACY,
   type AppInfo,
+  type UpdateManagedUserPayload,
   type WindowState
 } from "@/shared/electronApi";
 import { registerLicenseHandlers, unregisterLicenseHandlers } from "./licenseHandlers";
@@ -111,6 +116,31 @@ export function registerIpcHandlers(isVerbose: boolean): void {
     async () => {
       await secureSessionStore.clearSession();
     }
+  );
+
+  withErrorHandling<void, AuthSetupStatus>(
+    IPC_CHANNELS_LEGACY.AUTH_GET_SETUP_STATUS,
+    async () => authService.getSetupStatus()
+  );
+
+  withErrorHandling<CreateInitialAdminPayload, AuthManagedUser>(
+    IPC_CHANNELS_LEGACY.AUTH_CREATE_INITIAL_ADMIN,
+    async (_event, payload) => authService.createInitialAdmin(payload)
+  );
+
+  withErrorHandling<void, AuthManagedUser[]>(
+    IPC_CHANNELS_LEGACY.AUTH_LIST_USERS,
+    async () => authService.listUsers()
+  );
+
+  withErrorHandling<CreateManagedUserPayload, AuthManagedUser>(
+    IPC_CHANNELS_LEGACY.AUTH_CREATE_USER,
+    async (_event, payload) => authService.createUser(payload)
+  );
+
+  withErrorHandling<UpdateManagedUserPayload, AuthManagedUser>(
+    IPC_CHANNELS_LEGACY.AUTH_UPDATE_USER,
+    async (_event, payload) => authService.updateUser(payload)
   );
 
   /**

@@ -26,6 +26,11 @@ const IPC_CHANNELS_LEGACY = {
   AUTH_LOAD_SESSION: "auth:load-session",
   AUTH_SAVE_SESSION: "auth:save-session",
   AUTH_CLEAR_SESSION: "auth:clear-session",
+  AUTH_GET_SETUP_STATUS: "auth:get-setup-status",
+  AUTH_CREATE_INITIAL_ADMIN: "auth:create-initial-admin",
+  AUTH_LIST_USERS: "auth:list-users",
+  AUTH_CREATE_USER: "auth:create-user",
+  AUTH_UPDATE_USER: "auth:update-user",
   FILESYSTEM_READ_TEXT_FILE: "filesystem:read-text-file",
   FILESYSTEM_WRITE_TEXT_FILE: "filesystem:write-text-file",
   APP_GET_INFO: "app:get-info",
@@ -64,7 +69,12 @@ const electronAPI = {
     logout: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOGOUT, payload),
     loadSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LOAD_SESSION),
     saveSession: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_SAVE_SESSION, payload),
-    clearSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION)
+    clearSession: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CLEAR_SESSION),
+    getSetupStatus: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_GET_SETUP_STATUS),
+    createInitialAdmin: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CREATE_INITIAL_ADMIN, payload),
+    listUsers: () => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_LIST_USERS),
+    createUser: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_CREATE_USER, payload),
+    updateUser: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.AUTH_UPDATE_USER, payload)
   },
   fileSystem: {
     readTextFile: (payload) => invokeIpc(IPC_CHANNELS_LEGACY.FILESYSTEM_READ_TEXT_FILE, payload),
@@ -137,3 +147,11 @@ const electronUpdater = {
 };
 electron.contextBridge.exposeInMainWorld("electronAPI", electronAPI);
 electron.contextBridge.exposeInMainWorld("electronUpdater", electronUpdater);
+electron.contextBridge.exposeInMainWorld("license", {
+  check: (k) => electron.ipcRenderer.invoke("license:webapp:check", k),
+  activate: (k, c, p) => electron.ipcRenderer.invoke("license:webapp:activate", {
+    licenseKey: k,
+    customer: c,
+    phone: p
+  })
+});
