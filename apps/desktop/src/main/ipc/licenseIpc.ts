@@ -1,6 +1,6 @@
 import { app, ipcMain } from "electron";
 import { deviceFingerprintService } from "../services/fingerprint";
-import { callWebApp } from "../services/licenseWebApp";
+import { activateLicense, checkLicense } from "../services/licenseWebApp";
 
 interface ActivatePayload {
   licenseKey: string;
@@ -10,18 +10,11 @@ interface ActivatePayload {
 
 ipcMain.handle("license:webapp:check", async (_event, licenseKey: string) => {
   const softwareName = app.getName() || "Partling-sale";
-  return callWebApp("check", { licenseKey, softwareName });
+  return checkLicense(licenseKey, softwareName);
 });
 
 ipcMain.handle("license:webapp:activate", async (_event, payload: ActivatePayload) => {
   const softwareName = app.getName() || "Partling-sale";
   const machineId = await deviceFingerprintService.getFingerprintHash();
-
-  return callWebApp("activate", {
-    licenseKey: payload.licenseKey,
-    machineId,
-    softwareName,
-    customer: payload.customer,
-    phone: payload.phone,
-  });
+  return activateLicense(payload.licenseKey, machineId, softwareName, payload.customer, payload.phone);
 });

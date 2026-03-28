@@ -1,9 +1,13 @@
-const WEBAPP_URL =
-  (process.env.VITE_LICENSE_WEBAPP_URL as string) ||
-  (process.env.LICENSE_WEBAPP_URL as string);
-const API_KEY =
-  (process.env.VITE_LICENSE_API_KEY as string) ||
-  (process.env.LICENSE_API_KEY as string);
+const BUILD_URL = ((import.meta as any)?.env?.VITE_LICENSE_WEBAPP_URL as string) || "";
+const BUILD_KEY = ((import.meta as any)?.env?.VITE_LICENSE_API_KEY as string) || "";
+
+function resolveUrl(): string {
+  return process.env.VITE_LICENSE_WEBAPP_URL || process.env.LICENSE_WEBAPP_URL || BUILD_URL || "";
+}
+
+function resolveKey(): string {
+  return process.env.VITE_LICENSE_API_KEY || process.env.LICENSE_API_KEY || BUILD_KEY || "";
+}
 
 type Status = "OK" | "ACTIVE" | "INVALID" | "BOUND_OTHER" | "ERROR";
 
@@ -24,12 +28,14 @@ export async function callWebApp(
   action: "check" | "activate",
   payload: Record<string, any>
 ): Promise<WebAppResp> {
-  if (!WEBAPP_URL) {
-    throw new Error("LICENSE_WEBAPP_URL not set");
+  const base = resolveUrl();
+  if (!base) {
+    throw new Error("LICENSE_WEBAPP_URL not configured");
   }
 
-  const url = joinAction(WEBAPP_URL, action);
-  const body = { ...payload, ...(API_KEY ? { apiKey: API_KEY } : {}) };
+  const url = joinAction(base, action);
+  const key = resolveKey();
+  const body = { ...payload, ...(key ? { apiKey: key } : {}) };
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -53,4 +59,24 @@ export async function callWebApp(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export function checkLicense(licenseKey: string, softwareName: string) {
+  return callWebApp("check", { licenseKey, softwareName });
+}
+
+export function activateLicense(
+  licenseKey: string,
+  machineId: string,
+  softwareName: string,
+  customer?: string,
+  phone?: string
+) {
+  return callWebApp("activate", {
+    licenseKey,
+    machineId,
+    softwareName,
+    customer,
+    phone,
+  });
 }

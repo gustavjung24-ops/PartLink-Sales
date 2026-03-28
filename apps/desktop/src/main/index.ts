@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -69,6 +69,10 @@ function createMainWindow(): BrowserWindow {
   } else {
     browserWindow.loadFile(getRendererEntry());
   }
+
+  browserWindow.webContents.on("did-fail-load", (_event, code, description, validatedURL) => {
+    dialog.showErrorBox("UI load failed", `Code ${code}: ${description}\nURL: ${validatedURL}`);
+  });
 
   return browserWindow;
 }
