@@ -4,8 +4,13 @@
   "asar": true,
   "files": ["dist/**", "node_modules/**", "resources/**", "package.json"],
   "asarUnpack": ["**/better-sqlite3/**"],
-  "extraResources": [{ "from": "resources/", "to": "resources", "filter": ["**/*"] }],
-  "win": { "target": ["portable", "nsis"], "artifactName": "Partling-sale-${version}-${arch}.${ext}" },
+  "extraResources": [
+    { "from": "resources/", "to": "resources", "filter": ["**/*"] }
+  ],
+  "win": {
+    "target": ["portable", "nsis"],
+    "artifactName": "Partling-sale-${version}-${arch}.${ext}"
+  },
   "nsis": {
     "oneClick": true,
     "perMachine": false,

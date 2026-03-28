@@ -1,56 +1,64 @@
 const WEBAPP_URL =
   (process.env.VITE_LICENSE_WEBAPP_URL as string) ||
-  (process.env.LICENSE_WEBAPP_URL as string);
+  process.env.LICENSE_WEBAPP_URL;
 const API_KEY =
   (process.env.VITE_LICENSE_API_KEY as string) ||
-  (process.env.LICENSE_API_KEY as string);
+  process.env.LICENSE_API_KEY;
 
 type Status = "OK" | "ACTIVE" | "INVALID" | "BOUND_OTHER" | "ERROR";
-
 export interface WebAppResp {
   ok: boolean;
   status: Status;
   message?: string;
-  data?: any;
+  data?: unknown;
 }
 
-function joinAction(url: string, action: string): string {
-  return url.includes("?")
-    ? `${url}&action=${encodeURIComponent(action)}`
-    : `${url}?action=${encodeURIComponent(action)}`;
-}
-
-export async function callWebApp(
+async function callWebApp(
   action: "check" | "activate",
-  payload: Record<string, any>
+  payload: Record<string, unknown>
 ): Promise<WebAppResp> {
-  if (!WEBAPP_URL) {
-    throw new Error("LICENSE_WEBAPP_URL not set");
-  }
-
-  const url = joinAction(WEBAPP_URL, action);
-  const body = { ...payload, ...(API_KEY ? { apiKey: API_KEY } : {}) };
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
+  if (!WEBAPP_URL) throw new Error("LICENSE_WEBAPP_URL not configured");
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8_000);
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal as any,
-    });
-    const text = await response.text();
+    const res = await fetch(
+      `${WEBAPP_URL}?action=${encodeURIComponent(action)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(API_KEY ? { "X-Api-Key": API_KEY } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal as AbortSignal,
+      }
+    );
+    const text = await res.text();
     try {
       return JSON.parse(text);
     } catch {
-      return {
-        ok: response.ok,
-        status: response.ok ? "OK" : "ERROR",
-        message: text,
-      };
+      return { ok: res.ok, status: res.ok ? "OK" : "ERROR", message: text };
     }
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timer);
   }
+}
+
+export function checkLicense(licenseKey: string, softwareName: string) {
+  return callWebApp("check", { licenseKey, softwareName });
+}
+export function activateLicense(
+  licenseKey: string,
+  machineId: string,
+  softwareName: string,
+  customer?: string,
+  phone?: string
+) {
+  return callWebApp("activate", {
+    licenseKey,
+    machineId,
+    softwareName,
+    customer,
+    phone,
+  });
 }
