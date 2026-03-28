@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { IPC_CHANNELS } from "@/shared/electronApi";
@@ -17,6 +18,10 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 
 function getPreloadPath(): string {
+  const cjsPath = path.join(__dirname, "../preload/index.cjs");
+  if (existsSync(cjsPath)) {
+    return cjsPath;
+  }
   return path.join(__dirname, "../preload/index.js");
 }
 
