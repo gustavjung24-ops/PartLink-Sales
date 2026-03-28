@@ -32,7 +32,11 @@ export class LicenseApiService {
   private nonceRequiredAfterMs = Date.UTC(2026, 2, 24, 0, 0, 0); // 2026-03-24T00:00:00Z
   private lastServerNonce: string | null = null;
 
-  constructor(apiBaseUrl: string = "http://localhost:3000") {
+  constructor(
+    apiBaseUrl: string = process.env.VITE_LICENSE_API_URL ||
+      process.env.LICENSE_API_URL ||
+      "http://localhost:3000"
+  ) {
     this.apiBaseUrl = apiBaseUrl;
   }
 
