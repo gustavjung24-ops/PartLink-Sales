@@ -5,7 +5,11 @@
   "files": ["dist/**", "node_modules/**", "resources/**", "package.json"],
   "asarUnpack": ["**/better-sqlite3/**"],
   "win": { "target": ["portable", "nsis"], "artifactName": "Partling-sale-${version}-${arch}.${ext}" },
+  "portable": {
+    "artifactName": "Partling-sale-${version}-portable-${arch}.${ext}"
+  },
   "nsis": {
+    "artifactName": "Partling-sale-Setup-${version}-${arch}.${ext}",
     "oneClick": true,
     "perMachine": false,
     "allowElevation": true,
