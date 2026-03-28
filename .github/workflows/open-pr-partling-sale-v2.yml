@@ -1,6 +1,7 @@
 name: "Open PR – Partling‑sale WebApp Licensing (v2)"
 
 on:
+  workflow_call: {}
   workflow_dispatch: {}
 
 # Requires repo Settings → Actions → General:
