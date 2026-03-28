@@ -1,0 +1,54 @@
+name: Build Windows (Portable + NSIS) – Partling-sale
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64 (Portable + NSIS)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build renderer + main
+        working-directory: apps/desktop
+        env:
+          VITE_LICENSE_WEBAPP_URL: ${{ vars.LICENSE_WEBAPP_URL != '' && vars.LICENSE_WEBAPP_URL || secrets.LICENSE_WEBAPP_URL }}
+          VITE_LICENSE_API_KEY: ${{ secrets.LICENSE_API_KEY }}
+        run: pnpm build
+
+      - name: Package – Portable
+        working-directory: apps/desktop
+        run: npx electron-builder --win portable --publish never
+
+      - name: Package – NSIS installer
+        working-directory: apps/desktop
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Partling-sale-Windows
+          retention-days: 14
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.zip

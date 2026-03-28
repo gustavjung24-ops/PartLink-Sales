@@ -1,0 +1,301 @@
+name: "Open PR – Partling‑sale WebApp Licensing (v2)"
+
+on:
+  workflow_dispatch: {}
+
+# Requires repo Settings → Actions → General:
+#   Workflow permissions → Read and write
+#   Allow GitHub Actions to create and approve pull requests ✓
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: Patch codebase & open PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Patch: fingerprint.ts ──────────────────────────────────────────────
+      - name: Write fingerprint.ts
+        run: |
+          mkdir -p apps/desktop/src/main/services
+          cat > apps/desktop/src/main/services/fingerprint.ts <<'EOF'
+          import { machineId } from "node-machine-id";
+          import { createHash } from "crypto";
+          let cached: string | null = null;
+          export async function getHashedMachineId(): Promise<string> {
+            if (cached) return cached;
+            const id = await machineId();
+            cached = createHash("sha256").update(id).digest("hex");
+            return cached;
+          }
+          EOF
+
+      # ── Patch: licenseWebApp.ts ────────────────────────────────────────────
+      - name: Write licenseWebApp.ts
+        run: |
+          mkdir -p apps/desktop/src/main/services
+          cat > apps/desktop/src/main/services/licenseWebApp.ts <<'EOF'
+          const WEBAPP_URL =
+            (process.env.VITE_LICENSE_WEBAPP_URL as string) ||
+            process.env.LICENSE_WEBAPP_URL;
+          const API_KEY =
+            (process.env.VITE_LICENSE_API_KEY as string) ||
+            process.env.LICENSE_API_KEY;
+
+          type Status = "OK" | "ACTIVE" | "INVALID" | "BOUND_OTHER" | "ERROR";
+          export interface WebAppResp {
+            ok: boolean;
+            status: Status;
+            message?: string;
+            data?: unknown;
+          }
+
+          async function callWebApp(
+            action: "check" | "activate",
+            payload: Record<string, unknown>
+          ): Promise<WebAppResp> {
+            if (!WEBAPP_URL) throw new Error("LICENSE_WEBAPP_URL not configured");
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 8_000);
+            try {
+              const res = await fetch(
+                `${WEBAPP_URL}?action=${encodeURIComponent(action)}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(API_KEY ? { "X-Api-Key": API_KEY } : {}),
+                  },
+                  body: JSON.stringify(payload),
+                  signal: ctrl.signal as AbortSignal,
+                }
+              );
+              const text = await res.text();
+              try {
+                return JSON.parse(text);
+              } catch {
+                return { ok: res.ok, status: res.ok ? "OK" : "ERROR", message: text };
+              }
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+
+          export function checkLicense(licenseKey: string, softwareName: string) {
+            return callWebApp("check", { licenseKey, softwareName });
+          }
+          export function activateLicense(
+            licenseKey: string,
+            machineId: string,
+            softwareName: string,
+            customer?: string,
+            phone?: string
+          ) {
+            return callWebApp("activate", {
+              licenseKey,
+              machineId,
+              softwareName,
+              customer,
+              phone,
+            });
+          }
+          EOF
+
+      # ── Patch: licenseIpc.ts ───────────────────────────────────────────────
+      - name: Write licenseIpc.ts
+        run: |
+          mkdir -p apps/desktop/src/main/ipc
+          cat > apps/desktop/src/main/ipc/licenseIpc.ts <<'EOF'
+          import { ipcMain, app } from "electron";
+          import { getHashedMachineId } from "../services/fingerprint";
+          import { checkLicense, activateLicense } from "../services/licenseWebApp";
+
+          ipcMain.handle("license:check", async (_e, licenseKey: string) => {
+            const softwareName = app.getName() || "Partling-sale";
+            return checkLicense(licenseKey, softwareName);
+          });
+
+          ipcMain.handle(
+            "license:activate",
+            async (
+              _e,
+              p: { licenseKey: string; customer?: string; phone?: string }
+            ) => {
+              const softwareName = app.getName() || "Partling-sale";
+              const mid = await getHashedMachineId();
+              return activateLicense(
+                p.licenseKey,
+                mid,
+                softwareName,
+                p.customer,
+                p.phone
+              );
+            }
+          );
+          EOF
+
+      # ── Patch: preload/index.ts ────────────────────────────────────────────
+      - name: Patch preload – expose license API
+        run: |
+          mkdir -p apps/desktop/src/preload
+          PRELOAD=apps/desktop/src/preload/index.ts
+          if [ -f "$PRELOAD" ] && grep -q 'license:' "$PRELOAD"; then
+            echo "preload already patched, skipping"
+          else
+            cat >> "$PRELOAD" <<'EOF'
+
+          import { contextBridge, ipcRenderer } from "electron";
+          contextBridge.exposeInMainWorld("license", {
+            check: (k: string) => ipcRenderer.invoke("license:check", k),
+            activate: (k: string, c?: string, p?: string) =>
+              ipcRenderer.invoke("license:activate", { licenseKey: k, customer: c, phone: p }),
+          });
+          EOF
+          fi
+
+      # ── Patch: Activate.tsx ────────────────────────────────────────────────
+      - name: Write Activate.tsx
+        run: |
+          mkdir -p apps/desktop/src/renderer/screens/LicenseActivation
+          cat > apps/desktop/src/renderer/screens/LicenseActivation/Activate.tsx <<'EOF'
+          import { useState } from "react";
+
+          declare global {
+            interface Window {
+              license: {
+                check(k: string): Promise<{ ok: boolean; status: string; message?: string }>;
+                activate(
+                  k: string,
+                  c?: string,
+                  p?: string
+                ): Promise<{ ok: boolean; status: string; message?: string }>;
+              };
+            }
+          }
+
+          export default function Activate() {
+            const [key, setKey] = useState("");
+            const [customer, setCustomer] = useState("");
+            const [phone, setPhone] = useState("");
+            const [msg, setMsg] = useState("");
+
+            const onCheck = async () => {
+              const r = await window.license.check(key.trim());
+              setMsg(`${r.status}${r.message ? `: ${r.message}` : ""}`);
+            };
+            const onActivate = async () => {
+              const r = await window.license.activate(
+                key.trim(),
+                customer.trim() || undefined,
+                phone.trim() || undefined
+              );
+              setMsg(`${r.status}${r.message ? `: ${r.message}` : ""}`);
+            };
+
+            return (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold">Kích hoạt bản quyền</h2>
+                <input
+                  placeholder="Mã Kích Hoạt"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <input
+                  placeholder="Khách hàng (tùy chọn)"
+                  value={customer}
+                  onChange={(e) => setCustomer(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <input
+                  placeholder="SĐT (tùy chọn)"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={onCheck}
+                    className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    Kiểm tra
+                  </button>
+                  <button
+                    onClick={onActivate}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Kích hoạt
+                  </button>
+                </div>
+                {msg && <div className="text-sm text-gray-700">{msg}</div>}
+              </div>
+            );
+          }
+          EOF
+
+      # ── Patch: electron-builder.json ──────────────────────────────────────
+      - name: Write electron-builder.json
+        run: |
+          cat > apps/desktop/electron-builder.json <<'EOF'
+          {
+            "appId": "com.partling.sale",
+            "productName": "Partling-sale",
+            "asar": true,
+            "files": ["dist/**", "node_modules/**", "resources/**", "package.json"],
+            "asarUnpack": ["**/better-sqlite3/**"],
+            "extraResources": [
+              { "from": "resources/", "to": "resources", "filter": ["**/*"] }
+            ],
+            "win": {
+              "target": ["portable", "nsis"],
+              "artifactName": "Partling-sale-${version}-${arch}.${ext}"
+            },
+            "nsis": {
+              "oneClick": true,
+              "perMachine": false,
+              "allowElevation": true,
+              "createDesktopShortcut": true,
+              "createStartMenuShortcut": true
+            }
+          }
+          EOF
+
+      # ── Patch: .env.example ────────────────────────────────────────────────
+      - name: Write .env.example
+        run: |
+          cat > apps/desktop/.env.example <<'EOF'
+          # Copy to .env.local for local development
+          VITE_LICENSE_WEBAPP_URL=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
+          VITE_LICENSE_API_KEY=__DEV_ONLY__
+          EOF
+
+      # ── Open PR ────────────────────────────────────────────────────────────
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "feat(licensing): Apps Script WebApp licensing + Windows Portable/NSIS"
+          title: "feat(licensing): Apps Script WebApp licensing + Windows Portable/NSIS (Partling-sale)"
+          body: |
+            ## Thay đổi
+            - Desktop gọi Google Apps Script Web App trực tiếp (không cần SA JSON hay backend)
+            - Gửi `X-Api-Key` từ CI secret trong mỗi request
+            - Machine ID được hash SHA-256 trước khi ghi nhận khi activation
+            - Packaging: Portable + NSIS đặt tên "Partling-sale"
+            - CI workflow `build-windows.yml` build và upload cả hai artifact
+
+            ## Secrets/Variables cần thiết
+            | Tên | Loại | Giá trị |
+            |-----|------|---------|
+            | `LICENSE_WEBAPP_URL` | Variable | URL `/exec` của Google Apps Script |
+            | `LICENSE_API_KEY` | Secret | API key bí mật |
+
+            ## Sau khi merge
+            Actions → **Build Windows (Portable + NSIS) – Partling-sale** → Run workflow
+          branch: feat/partling-sale-webapp-licensing
+          base: main
+          delete-branch: true
