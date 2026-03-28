@@ -27,6 +27,21 @@ interface AuthState {
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 function clearSessionTimers(): void {
   if (refreshTimer) {
     clearTimeout(refreshTimer);
@@ -123,7 +138,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isBootstrapping: true, error: null });
 
     try {
-      const session = await window.electronAPI.auth.loadSession();
+      if (!window.electronAPI?.auth) {
+        throw new Error("Electron bridge unavailable");
+      }
+
+      const session = await withTimeout(
+        window.electronAPI.auth.loadSession(),
+        8000,
+        "Khởi tạo phiên bị timeout"
+      );
 
       if (!session) {
         set({ isBootstrapping: false });
@@ -131,7 +154,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       if (Date.now() >= session.expiresAt) {
-        const refreshed = await window.electronAPI.auth.refresh({ refreshToken: session.refreshToken });
+        const refreshed = await withTimeout(
+          window.electronAPI.auth.refresh({ refreshToken: session.refreshToken }),
+          8000,
+          "Làm mới phiên bị timeout"
+        );
         const refreshedSession: AuthSession = {
           ...session,
           accessToken: refreshed.accessToken,
@@ -139,7 +166,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           issuedAt: Date.now(),
         };
 
-        await window.electronAPI.auth.saveSession(refreshedSession);
+        await withTimeout(
+          window.electronAPI.auth.saveSession(refreshedSession),
+          8000,
+          "Lưu phiên bị timeout"
+        );
         set({ ...applySession(refreshedSession, true), isBootstrapping: false });
         scheduleSessionLifecycle(get);
         return;
@@ -148,7 +179,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ ...applySession(session, true), isBootstrapping: false });
       scheduleSessionLifecycle(get);
     } catch {
-      await window.electronAPI.auth.clearSession();
+      try {
+        await withTimeout(window.electronAPI.auth.clearSession(), 4000, "Clear session timeout");
+      } catch {
+        // Ignore clear-session failures during bootstrap fallback.
+      }
       clearSessionTimers();
       set({
         user: null,
