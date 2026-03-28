@@ -2,6 +2,7 @@
   "name": "@sparelink/desktop",
   "version": "1.0.0",
   "description": "SPARELINK Desktop Application",
+  "packageManager": "pnpm@10.23.0",
   "type": "module",
   "main": "dist/main/index.cjs",
   "preload": "dist/preload/index.cjs",
