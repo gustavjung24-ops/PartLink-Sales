@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { IPC_CHANNELS } from "@/shared/electronApi";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc/handlers";
+import "./ipc/licenseIpc";
 import { licenseStateManager } from "./services/license";
 import { licenseApiService } from "./services/licenseApi";
 import { secureLicenseStore } from "./services/secureLicenseStore";

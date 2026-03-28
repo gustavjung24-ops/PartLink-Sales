@@ -127,3 +127,13 @@ const electronUpdater: ElectronUpdaterAPI = {
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);
 contextBridge.exposeInMainWorld("electronUpdater", electronUpdater);
+
+contextBridge.exposeInMainWorld("license", {
+  check: (k: string) => ipcRenderer.invoke("license:webapp:check", k),
+  activate: (k: string, c?: string, p?: string) =>
+    ipcRenderer.invoke("license:webapp:activate", {
+      licenseKey: k,
+      customer: c,
+      phone: p,
+    }),
+});
