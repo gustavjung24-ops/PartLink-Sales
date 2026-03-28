@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package": "pnpm run build && electron-builder --config electron-builder.json",
+    "package": "electron-builder --win nsis",
+    "package:portable": "electron-builder --win portable",
+    "postinstall": "electron-builder install-app-deps",
     "build:installer": "node ../../scripts/build-installer.js",
     "build:installer:publish": "node ../../scripts/build-installer.js --publish",
     "preview": "electron-vite preview",

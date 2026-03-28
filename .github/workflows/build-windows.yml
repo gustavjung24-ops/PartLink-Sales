@@ -1,4 +1,4 @@
-name: Build Windows (Portable + NSIS) – Partling-sale
+name: Build Windows (Portable + NSIS) - Partling-sale
 
 on:
   workflow_dispatch: {}
@@ -11,47 +11,51 @@ permissions:
 
 jobs:
   build:
-    name: Windows x64 (Portable + NSIS)
     runs-on: windows-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
 
       - name: Enable corepack (pnpm)
         run: corepack enable
 
-      - name: Install dependencies
+      - name: Install deps (root)
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared package
-        run: pnpm --filter @sparelink/shared build
+      - name: Build shared/packages first
+        run: pnpm -r --workspace-concurrency=1 --filter "./packages/**" build
 
-      - name: Build renderer + main
+      - name: Install native module prebuilds (desktop)
+        working-directory: apps/desktop
+        run: npx electron-builder install-app-deps
+
+      - name: Build desktop (renderer/main)
         working-directory: apps/desktop
         env:
-          VITE_LICENSE_API_URL: ${{ vars.LICENSE_API_URL || secrets.LICENSE_API_URL }}
+          VITE_LICENSE_WEBAPP_URL: ${{ vars.LICENSE_WEBAPP_URL || secrets.LICENSE_WEBAPP_URL }}
           VITE_LICENSE_API_KEY: ${{ secrets.LICENSE_API_KEY }}
         run: pnpm build
 
       - name: Package – Portable
         working-directory: apps/desktop
-        run: npx electron-builder --win portable --publish never
+        run: pnpm run package:portable
 
-      - name: Package – NSIS installer
+      - name: Package – NSIS
         working-directory: apps/desktop
-        run: npx electron-builder --win nsis --publish never
+        run: pnpm run package
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Partling-sale-Windows
-          retention-days: 14
           path: |
-            apps/desktop/release/**/*.exe
-            apps/desktop/release/**/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.zip

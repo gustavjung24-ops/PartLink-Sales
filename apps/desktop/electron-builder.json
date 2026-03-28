@@ -1,85 +1,16 @@
 {
-  "appId": "com.sparelink.desktop",
-  "productName": "SPARELINK Sales",
-  "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-  "copyright": "Copyright © 2026 PartLink Team",
-  "directories": {
-    "output": "release/${version}",
-    "buildResources": "build"
-  },
-  "files": [
-    "dist/main/**/*",
-    "dist/preload/**/*",
-    "dist/renderer/**/*",
-    "package.json",
-    "!**/*.map",
-    "!**/src/**",
-    "!**/*.ts",
-    "!**/*.tsx"
-  ],
-  "extraResources": [
-    {
-      "from": "build/assets",
-      "to": "assets",
-      "filter": [
-        "**/*",
-        "!**/.DS_Store"
-      ]
-    }
-  ],
-  "extraMetadata": {
-    "main": "dist/main/index.cjs"
-  },
+  "appId": "com.partling.sale",
+  "productName": "Partling-sale",
   "asar": true,
-  "publish": [
-    {
-      "provider": "generic",
-      "url": "${env.SPARELINK_UPDATE_URL}",
-      "channel": "latest"
-    }
-  ],
-  "win": {
-    "icon": "build/windows/app.ico",
-    "verifyUpdateCodeSignature": true,
-    "signAndEditExecutable": true,
-    "requestedExecutionLevel": "asInvoker",
-    "target": [
-      {
-        "target": "nsis",
-        "arch": [
-          "x64"
-        ]
-      }
-    ]
-  },
-  "mac": {
-    "target": [
-      {
-        "target": "dmg",
-        "arch": ["x64", "arm64"]
-      },
-      {
-        "target": "zip",
-        "arch": ["x64", "arm64"]
-      }
-    ],
-    "category": "public.app-category.business",
-    "hardenedRuntime": true,
-    "gatekeeperAssess": false,
-    "entitlements": "build/mac/entitlements.mac.plist",
-    "entitlementsInherit": "build/mac/entitlements.mac.inherit.plist",
-    "notarize": true
-  },
+  "files": ["dist/**", "node_modules/**", "resources/**", "package.json"],
+  "asarUnpack": ["**/better-sqlite3/**"],
+  "extraResources": [{ "from": "resources/", "to": "resources", "filter": ["**/*"] }],
+  "win": { "target": ["portable", "nsis"], "artifactName": "Partling-sale-${version}-${arch}.${ext}" },
   "nsis": {
-    "oneClick": false,
-    "perMachine": true,
+    "oneClick": true,
+    "perMachine": false,
     "allowElevation": true,
-    "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": "always",
-    "createStartMenuShortcut": true,
-    "runAfterFinish": true,
-    "installerIcon": "build/windows/installer.ico",
-    "uninstallerIcon": "build/windows/uninstaller.ico",
-    "installerHeaderIcon": "build/windows/header.ico"
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
   }
 }
