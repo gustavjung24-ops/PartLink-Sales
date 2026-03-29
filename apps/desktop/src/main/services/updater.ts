@@ -94,6 +94,13 @@ export class AppUpdaterService {
       return;
     }
 
+    // For offline/private deployments without update host configured,
+    // skip updater checks to avoid noisy app-update.yml errors.
+    if (!process.env.SPARELINK_UPDATE_URL) {
+      this.emit("update-not-available");
+      return;
+    }
+
     if (!this.isEligibleForRollout()) {
       this.emit("update-not-available");
       return;
