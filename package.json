@@ -12,6 +12,7 @@
     "dev": "pnpm --recursive dev",
     "build": "pnpm --filter @sparelink/shared build && pnpm -r --filter './apps/*' build",
     "build:desktop-installer": "node ./scripts/build-installer.js",
+    "license:issue": "pnpm --filter @sparelink/api run license:issue",
     "backup:postgres:base": "bash infra/backup/postgres/backup-base.sh",
     "backup:postgres:logical": "bash infra/backup/postgres/backup-logical.sh",
     "backup:postgres:verify": "bash infra/backup/postgres/verify-backup.sh",

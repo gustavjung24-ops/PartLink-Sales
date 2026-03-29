@@ -22,3 +22,28 @@
 - Dual control for production enterprise licenses
 - Audit log entry required for every generated key
 - Revocation and reissue must reference the previous key in the CRM
+
+## Operator quick command (date-based expiry)
+Use this command from repository root when PostgreSQL and API environment are available.
+
+```bash
+pnpm license:issue -- <customerId> <expiryDate:YYYY-MM-DD> <maxActivations> <isTrial>
+```
+
+Examples:
+
+```bash
+# One key for one machine, expires on 2026-12-31
+pnpm license:issue -- CUST-ACME-001 2026-12-31 1 false
+
+# Trial key for one machine, expires on 2026-06-30
+pnpm license:issue -- CUST-PILOT-010 2026-06-30 1 true
+```
+
+Command output includes:
+- LICENSE_KEY
+- CUSTOMER_ID
+- EXPIRES_ON
+- EXPIRY_DAYS
+- MAX_ACTIVATIONS
+- IS_TRIAL
