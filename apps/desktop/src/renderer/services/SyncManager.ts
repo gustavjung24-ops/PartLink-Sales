@@ -175,8 +175,22 @@ export class SyncManager {
       // });
       // const data = await response.json();
 
+      // Back up the local SQLite cache before the server response overwrites it.
+      // Conflict strategy: SERVER_WINS — server data is always authoritative.
+      // The backup is written to <userData>/cache/backups/ and the event is
+      // appended to <userData>/cache/sync-audit.log for traceability.
+      try {
+        const overwriteResult = await window.electronAPI.cache.backupBeforeOverwrite("sync-pull");
+        console.log(
+          `[SyncManager] Cache backed up before overwrite: ${overwriteResult.backupPath ?? "no file (cache absent)"}`,
+        );
+      } catch (backupError) {
+        // Non-fatal: log and continue — a failed backup must not block the sync.
+        console.error("[SyncManager] Pre-overwrite backup failed (continuing):", backupError);
+      }
+
       // Process changes and update local state
-      // TODO: Apply changes to react-query cache
+      // TODO: Apply server response to react-query cache / SQLite
       // For now, just log
       console.log("[SyncManager] Pulled changes from server");
     } catch (error) {

@@ -106,6 +106,12 @@ export interface ElectronUpdaterAPI {
   quitAndInstall: () => Promise<void>;
 }
 
+export interface SyncOverwriteResult {
+  backupPath: string | null;
+  /** ISO-8601 timestamp recorded in the audit log. */
+  loggedAt: string;
+}
+
 export interface ElectronAPI {
   auth: {
     login: (payload: AuthLoginPayload) => Promise<AuthLoginResult>;
@@ -116,6 +122,10 @@ export interface ElectronAPI {
     loadSession: () => Promise<AuthSession | null>;
     saveSession: (payload: AuthSession) => Promise<void>;
     clearSession: () => Promise<void>;
+  };
+  cache: {
+    /** Back up the SQLite cache before a server-wins sync overwrite. */
+    backupBeforeOverwrite: (reason?: string) => Promise<SyncOverwriteResult>;
   };
   fileSystem: {
     readTextFile: (payload: FileReadPayload) => Promise<string>;
@@ -188,7 +198,10 @@ export const IPC_CHANNELS = {
     CHECK_FOR_UPDATES: "updater:check-for-updates",
     QUIT_AND_INSTALL: "updater:quit-and-install",
     EVENT: "updater:event"
-  }
+  },
+  cache: {
+    BACKUP_BEFORE_OVERWRITE: "cache:backup-before-overwrite",
+  },
 } as const;
 
 // Flattened for backwards compatibility

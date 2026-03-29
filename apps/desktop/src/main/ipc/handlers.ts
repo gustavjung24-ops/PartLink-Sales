@@ -13,12 +13,14 @@ import {
   IPC_CHANNELS,
   IPC_CHANNELS_LEGACY,
   type AppInfo,
-  type WindowState
+  type WindowState,
+  type SyncOverwriteResult,
 } from "@/shared/electronApi";
 import { registerLicenseHandlers, unregisterLicenseHandlers } from "./licenseHandlers";
 import { withErrorHandling } from "./utils";
 import { authService } from "../services/auth";
 import { secureSessionStore } from "../services/secureSessionStore";
+import { sqliteCacheRecoveryService } from "../services/sqliteCacheRecovery";
 
 /**
  * Helper to safely get sender window with proper error handling
@@ -212,6 +214,16 @@ export function registerIpcHandlers(isVerbose: boolean): void {
         isMaximized: window.isMaximized(),
         isMinimized: window.isMinimized()
       };
+    }
+  );
+
+  /**
+   * CACHE: Back up SQLite cache before a server-wins sync overwrite.
+   */
+  withErrorHandling<{ reason?: string } | undefined, SyncOverwriteResult>(
+    IPC_CHANNELS.cache.BACKUP_BEFORE_OVERWRITE,
+    async (_event, payload) => {
+      return sqliteCacheRecoveryService.backupBeforeOverwrite(payload?.reason);
     }
   );
 }

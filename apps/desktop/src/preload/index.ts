@@ -8,6 +8,7 @@ import {
   type UpdaterEventName,
   type WindowState,
   type IpcResponse,
+  type SyncOverwriteResult,
 } from "@/shared/electronApi";
 
 /**
@@ -74,6 +75,10 @@ const electronAPI: ElectronAPI = {
     getState: () => invokeIpc(IPC_CHANNELS.license.GET_STATE),
     isValid: () => invokeIpc(IPC_CHANNELS.license.IS_VALID),
     canRebind: () => invokeIpc(IPC_CHANNELS.license.CAN_REBIND),
+  },
+  cache: {
+    backupBeforeOverwrite: (reason?: string) =>
+      invokeIpc<SyncOverwriteResult>(IPC_CHANNELS.cache.BACKUP_BEFORE_OVERWRITE, { reason }),
   },
   events: {
     onWindowStateChanged: (handler: (state: WindowState) => void) => {

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { app } from "electron";
 import { access, appendFile, copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import type { SyncOverwriteResult } from "@/shared/electronApi";
 
 export interface SqliteCacheHealthResult {
   status: "missing" | "healthy" | "recovered" | "rebuild-required";
@@ -10,11 +11,7 @@ export interface SqliteCacheHealthResult {
   detail?: string;
 }
 
-export interface SyncOverwriteResult {
-  backupPath: string | null;
-  /** ISO-8601 timestamp recorded in the audit log. */
-  loggedAt: string;
-}
+export { SyncOverwriteResult };
 
 export class SqliteCacheRecoveryService {
   private readonly databasePath =
