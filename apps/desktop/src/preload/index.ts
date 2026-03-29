@@ -24,11 +24,8 @@ function unwrapIpcResponse<T>(response: IpcResponse<T>): T {
     throw error;
   }
 
-  if (response.data === undefined) {
-    throw new Error("IPC response missing data field");
-  }
-
-  return response.data;
+  // Some channels intentionally return void (data is undefined on success).
+  return response.data as T;
 }
 
 /**
