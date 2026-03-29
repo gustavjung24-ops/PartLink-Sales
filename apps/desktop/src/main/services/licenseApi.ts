@@ -24,8 +24,24 @@ interface CachedValidation {
   cachedAt: number;
 }
 
+type WebAppStatus = "OK" | "ACTIVE" | "BOUND_OTHER" | "EXPIRED" | "SUSPENDED" | "INVALID";
+
+interface WebAppLicenseResponse {
+  ok?: boolean;
+  success?: boolean;
+  status?: string;
+  message?: string;
+  expiresAt?: string | number;
+  expiryAt?: string | number;
+  activatedAt?: string | number;
+  remainingDays?: number;
+}
+
 export class LicenseApiService {
   private apiBaseUrl: string;
+  private webAppUrl: string | null;
+  private webAppApiKey: string | null;
+  private webAppAppName: string;
   private lastValidation: CachedValidation | null = null;
   private clockSkewThresholdMs = 5 * 60 * 1000; // 5 minutes
   private clockRollbackToleranceMs = 2 * 60 * 1000; // 2 minutes
@@ -34,6 +50,10 @@ export class LicenseApiService {
 
   constructor(apiBaseUrl: string = "http://localhost:3000") {
     this.apiBaseUrl = apiBaseUrl;
+    const configuredWebAppUrl = process.env.LICENSE_WEBAPP_URL?.trim();
+    this.webAppUrl = configuredWebAppUrl ? configuredWebAppUrl : null;
+    this.webAppApiKey = process.env.LICENSE_API_KEY?.trim() || null;
+    this.webAppAppName = process.env.LICENSE_APP_NAME?.trim() || "Partling-sale";
   }
 
   restoreNonce(nonce: string | null | undefined): void {
@@ -49,6 +69,10 @@ export class LicenseApiService {
   ): Promise<LicenseValidationResponse> {
     if (!licenseKey || !fingerprint) {
       throw new Error("License key and fingerprint required");
+    }
+
+    if (this.webAppUrl) {
+      return this.activateViaWebApp(licenseKey, fingerprint);
     }
 
     const payload: LicenseActivationPayload = {
@@ -106,6 +130,10 @@ export class LicenseApiService {
     licenseKey: string,
     fingerprint: DeviceFingerprint
   ): Promise<LicenseValidationResponse> {
+    if (this.webAppUrl) {
+      return this.validateViaWebApp(licenseKey, fingerprint);
+    }
+
     const clientTime = Date.now();
 
     const payload: LicenseValidationPayload = {
@@ -254,6 +282,18 @@ export class LicenseApiService {
    * Deactivate license for device switch
    */
   async deactivateLicense(licenseKey: string, deviceId: string): Promise<void> {
+    if (this.webAppUrl) {
+      // Google Apps Script SOP currently supports activate/check only.
+      // For now, clear local cache and require admin-side rebind in Sheet.
+      this.lastValidation = null;
+      this.lastServerNonce = null;
+      console.warn("[License API] Deactivate via WebApp is not implemented. Use admin rebind process.", {
+        licenseKey,
+        deviceId,
+      });
+      return;
+    }
+
     const payload: DeviceDeactivationPayload = {
       key: licenseKey,
       deviceId,
@@ -317,6 +357,191 @@ export class LicenseApiService {
       return this.lastValidation.response;
     }
     throw new Error("No valid cached license data available. Must validate online first.");
+  }
+
+  private async activateViaWebApp(
+    licenseKey: string,
+    fingerprint: DeviceFingerprint
+  ): Promise<LicenseValidationResponse> {
+    const data = await this.callWebApp("activate", licenseKey, fingerprint);
+    const normalized = this.normalizeWebAppStatus(data.status);
+    const mapped = this.mapWebAppResponse(normalized, data, licenseKey, fingerprint, "Kich hoat thanh cong");
+
+    if (!mapped.success || mapped.status === LicenseState.EXPIRED || mapped.status === LicenseState.SUSPENDED) {
+      throw new Error(mapped.message || "Kich hoat that bai");
+    }
+
+    this.lastValidation = {
+      response: mapped,
+      cachedAt: Date.now(),
+    };
+    this.lastServerNonce = mapped.nonce;
+
+    return mapped;
+  }
+
+  private async validateViaWebApp(
+    licenseKey: string,
+    fingerprint: DeviceFingerprint
+  ): Promise<LicenseValidationResponse> {
+    try {
+      const data = await this.callWebApp("check", licenseKey, fingerprint);
+      const normalized = this.normalizeWebAppStatus(data.status);
+      const mapped = this.mapWebAppResponse(normalized, data, licenseKey, fingerprint, "Kiem tra ban quyen thanh cong");
+
+      if (!mapped.success) {
+        throw new Error(mapped.message || "Kiem tra ban quyen that bai");
+      }
+
+      this.lastValidation = {
+        response: mapped,
+        cachedAt: Date.now(),
+      };
+      this.lastServerNonce = mapped.nonce;
+
+      return mapped;
+    } catch (error) {
+      if (this.lastValidation && this.isGraceValid(this.lastValidation.response)) {
+        return this.lastValidation.response;
+      }
+
+      throw error;
+    }
+  }
+
+  private async callWebApp(
+    action: "activate" | "check",
+    licenseKey: string,
+    fingerprint: DeviceFingerprint
+  ): Promise<WebAppLicenseResponse> {
+    if (!this.webAppUrl) {
+      throw new Error("LICENSE_WEBAPP_URL is not configured");
+    }
+
+    const endpoint = `${this.webAppUrl}${this.webAppUrl.includes("?") ? "&" : "?"}action=${action}`;
+    const payload: Record<string, unknown> = {
+      apiKey: this.webAppApiKey,
+      activationCode: licenseKey,
+      key: licenseKey,
+      machineId: fingerprint.machineId,
+      deviceId: fingerprint.machineId,
+      appName: this.webAppAppName,
+      softwareName: this.webAppAppName,
+      clientTime: Date.now(),
+    };
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = (await response.json().catch(() => ({}))) as WebAppLicenseResponse;
+    if (!response.ok) {
+      throw new Error(raw.message || "License WebApp request failed");
+    }
+
+    return raw;
+  }
+
+  private normalizeWebAppStatus(status?: string): WebAppStatus {
+    const normalized = (status || "INVALID").trim().toUpperCase();
+    if (
+      normalized === "OK" ||
+      normalized === "ACTIVE" ||
+      normalized === "BOUND_OTHER" ||
+      normalized === "EXPIRED" ||
+      normalized === "SUSPENDED"
+    ) {
+      return normalized;
+    }
+    return "INVALID";
+  }
+
+  private mapWebAppResponse(
+    status: WebAppStatus,
+    data: WebAppLicenseResponse,
+    licenseKey: string,
+    fingerprint: DeviceFingerprint,
+    okMessage: string
+  ): LicenseValidationResponse {
+    const now = Date.now();
+    const expiresAtRaw = data.expiresAt ?? data.expiryAt;
+    const expiresAt = this.parseMillis(expiresAtRaw, now + 24 * 60 * 60 * 1000);
+    const activatedAt = this.parseMillis(data.activatedAt, now);
+    const remainingDays = typeof data.remainingDays === "number"
+      ? data.remainingDays
+      : Math.max(0, Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000)));
+
+    let mappedState: LicenseState;
+    let success = true;
+    let message = data.message || okMessage;
+
+    switch (status) {
+      case "OK":
+      case "ACTIVE":
+        mappedState = LicenseState.ACTIVE;
+        message = data.message || (status === "OK" ? "Kich hoat thanh cong. Con han su dung." : "Ban quyen da kich hoat tren may nay.");
+        break;
+      case "BOUND_OTHER":
+        mappedState = LicenseState.SUSPENDED;
+        success = false;
+        message = data.message || "Da duoc su dung tren mot thiet bi khac.";
+        break;
+      case "EXPIRED":
+        mappedState = LicenseState.EXPIRED;
+        success = false;
+        message = data.message || "Ban quyen da het han.";
+        break;
+      case "SUSPENDED":
+        mappedState = LicenseState.SUSPENDED;
+        success = false;
+        message = data.message || "Ma bi khoa tam thoi.";
+        break;
+      default:
+        mappedState = LicenseState.NO_LICENSE;
+        success = false;
+        message = data.message || "Ma khong ton tai hoac khong hop le.";
+        break;
+    }
+
+    return {
+      success,
+      status: mappedState,
+      serverTime: now,
+      nonce: this.lastServerNonce || "WEBAPP",
+      nonceIssuedAt: now,
+      graceExpiresAt: mappedState === LicenseState.EXPIRED ? expiresAt : undefined,
+      message: `${message}${success ? ` Con ${remainingDays} ngay.` : ""}`,
+      licenseData: {
+        key: licenseKey,
+        deviceId: fingerprint.machineId,
+        status: mappedState,
+        activatedAt,
+        expiresAt,
+        productName: this.webAppAppName,
+        productVersion: "1.0.0",
+        features: ["search", "quotes", "offline-sync"],
+        maxDeviceResets: 0,
+        totalResets: 0,
+        lastValidatedAt: now,
+        nonceIssuedAt: now,
+        nonce: this.lastServerNonce || "WEBAPP",
+      },
+    };
+  }
+
+  private parseMillis(value: string | number | undefined, fallback: number): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        return parsed;
+      }
+    }
+    return fallback;
   }
 }
 
